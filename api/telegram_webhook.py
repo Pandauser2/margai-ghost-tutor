@@ -68,8 +68,8 @@ def resolve_institute_id(supabase, chat_id: int | str) -> int:
         r = supabase.table("institutes").select("id").limit(1).execute()
         if r.data and len(r.data) > 0:
             return int(r.data[0]["id"])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("resolve_institute_id lookup failed, using default: %s", e)
     return default
 
 
@@ -165,6 +165,11 @@ class handler(BaseHTTPRequestHandler):
             return
 
         chat_id = message.get("chat", {}).get("id")
+        if chat_id is None:
+            logger.warning("Missing chat.id in Telegram update")
+            self.send_response(200)
+            self.end_headers()
+            return
         from_user = message.get("from") or {}
         student_telegram_id = str(from_user.get("id", ""))
         student_name = (from_user.get("first_name") or "") + " " + (from_user.get("last_name") or "")

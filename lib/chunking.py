@@ -4,8 +4,6 @@ Stable IDs: prefix + hash(file_path + chunk_index) for idempotent upserts.
 """
 import hashlib
 from pathlib import Path
-from typing import Iterator
-
 
 CHUNK_SIZE = 1000
 OVERLAP = 200
