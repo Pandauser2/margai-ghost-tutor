@@ -1,0 +1,14 @@
+# MargAI Ghost Tutor pilot: ingestion scripts, Vercel API (shared deps)
+supabase>=2.0.0
+pinecone-client>=3.0.0
+google-generativeai>=0.8.0
+httpx>=0.27.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# PDF extraction (reuse upsc-test-engine in same repo; or install for standalone script)
+pymupdf>=1.24.0
+pdfplumber>=0.11.0
+ftfy>=6.0.0
+# Optional: tesseract via pytesseract if running OCR locally
+# opencv-python-headless, pytesseract
