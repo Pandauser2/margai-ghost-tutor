@@ -2,6 +2,8 @@
 
 RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→escalate to TA. Multi-tenant via Pinecone namespaces (`institute_id`).
 
+**→ Step-by-step run guide (bash commands): [RUN.md](RUN.md)**
+
 ## Setup
 
 1. **Supabase**  
