@@ -30,6 +30,17 @@ RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→
   `python scripts/cleanup_logs.py`  
   Deletes `query_logs` older than 30 days.
 
+## Testing
+
+- **Local (no Supabase/Pinecone/Gemini):**  
+  From repo root:  
+  `python margai-ghost-tutor-pilot/scripts/test_ingest_local.py manual-qc-pdfs/small_test_upsc.pdf test-institute`  
+  Verifies extraction and chunking only.
+
+- **Full ingest:**  
+  Install deps (`pip install -r margai-ghost-tutor-pilot/requirements.txt`), set `.env`, then from repo root:  
+  `python margai-ghost-tutor-pilot/scripts/ingest_pdf.py manual-qc-pdfs/small_test_upsc.pdf test-institute`
+
 ## Observability
 
 - **Webhook:** Logs `request_duration_seconds` (webhook received → reply sent) to spot cold-start latency.
