@@ -39,7 +39,15 @@ ON CONFLICT (id) DO NOTHING;
 
 ## 3. Pinecone
 
-**3.1** Create a serverless index (Pinecone console or Python):
+**New to Pinecone?** Follow **[docs/PINECONE_FROM_ZERO.md](docs/PINECONE_FROM_ZERO.md)** for account, API key, and creating the index via the dashboard (no Python required).
+
+**3.1** Install the Pinecone client (use the same env you'll use for ingestion, or any Python 3.10+):
+
+```bash
+pip install "pinecone>=5.0.0"
+```
+
+**3.2** Create a serverless index (Pinecone console or Python):
 
 ```bash
 cd margai-ghost-tutor-pilot
@@ -64,7 +72,7 @@ Or create it in the Pinecone dashboard: dimension **768**, metric **cosine**, se
 
 ## 4. Telegram bot
 
-**4.1** In Telegram, message [@BotFather](https://t.me/BotFather), create a bot, copy the token → `TELEGRAM_BOT_TOKEN`.
+**4.1** In Telegram, message [@BotFather](https://t.me/BotFather), create a bot. Copy the token it shows (“You can use this token to access HTTP API: …”) — that **is** `TELEGRAM_BOT_TOKEN`; put it in `.env` as `TELEGRAM_BOT_TOKEN`.
 
 **4.2** (Optional) Generate a webhook secret and set it in BotFather / `setWebhook` as `secret_token` → `TELEGRAM_WEBHOOK_SECRET`:
 
@@ -76,23 +84,42 @@ openssl rand -hex 32
 
 ## 5. Environment and dependencies
 
-**5.1** Create `.env` in the pilot folder:
+**5.1** Create `.env` in the pilot folder (only if it doesn’t exist yet):
 
 ```bash
 cd /Users/rajeshmukherjee/Desktop/04_Data_Science/Projects/Cursor_test_project/margai-ghost-tutor-pilot
-cp .env.example .env
+[ -f .env ] || cp .env.example .env
 ```
 
-Edit `.env` and set:
+If `.env` already exists, skip the copy and just edit it to add or update keys.
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `PINECONE_API_KEY`
-- `PINECONE_INDEX_NAME=margai-ghost-tutor`
-- `GEMINI_API_KEY`
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_WEBHOOK_SECRET` (optional; leave empty if not using)
-- `INSTITUTE_ID_DEFAULT=1` (matches the institute you inserted)
+**5.1b How to edit `.env`:** Open `margai-ghost-tutor-pilot/.env` in Cursor (or any editor). Each line is `KEY=value` (no spaces around `=`). Replace the placeholder values with your real keys:
+
+| Variable | Where to get it | Example |
+|----------|-----------------|--------|
+| `SUPABASE_URL` | Supabase → Project Settings → API → Project URL | `https://abcdefgh.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` (secret) | `eyJhbGciOiJIUzI1NiIs...` |
+| `PINECONE_API_KEY` | Pinecone console → API Keys | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+| `PINECONE_INDEX_NAME` | Name you gave the index | `margai-ghost-tutor` |
+| `GEMINI_API_KEY` | Google AI Studio / API key for Gemini | `AIza...` |
+| `TELEGRAM_BOT_TOKEN` | BotFather “token to access HTTP API” | `7123456789:AAH...` |
+| `TELEGRAM_WEBHOOK_SECRET` | Optional; from `openssl rand -hex 32` or leave empty | `` or `a1b2c3...` |
+| `INSTITUTE_ID_DEFAULT` | Must match the `id` you used in `INSERT INTO institutes` (e.g. 1) | `1` |
+
+Example `.env` (with fake values):
+
+```env
+SUPABASE_URL=https://abcdefgh.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+PINECONE_API_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+PINECONE_INDEX_NAME=margai-ghost-tutor
+GEMINI_API_KEY=AIzaSy...
+TELEGRAM_BOT_TOKEN=7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TELEGRAM_WEBHOOK_SECRET=
+INSTITUTE_ID_DEFAULT=1
+```
+
+Do not commit `.env` to git (it should be in `.gitignore`).
 
 **5.2** Install Python deps (from repo root; use a venv if you prefer):
 
@@ -121,7 +148,7 @@ Expected: `Extraction: page_count=... total_chars=...` and `Chunking: num_chunks
 ```bash
 cd /Users/rajeshmukherjee/Desktop/04_Data_Science/Projects/Cursor_test_project
 source margai-ghost-tutor-pilot/.venv/bin/activate
-export $(grep -v '^#' margai-ghost-tutor-pilot/.env | xargs)
+[ -f margai-ghost-tutor-pilot/.env ] && export $(grep -v '^#' margai-ghost-tutor-pilot/.env | xargs)
 python3 margai-ghost-tutor-pilot/scripts/ingest_pdf.py manual-qc-pdfs/small_test_upsc.pdf test-institute
 ```
 
@@ -138,9 +165,21 @@ cd /Users/rajeshmukherjee/Desktop/04_Data_Science/Projects/Cursor_test_project/m
 npx vercel --yes
 ```
 
-Follow prompts (link existing project or create new). Set env vars in Vercel:
+Follow prompts (link existing project or create new). **Set env vars in Vercel** (choose one):
 
-- Project → Settings → Environment Variables: add every variable from `.env` (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INSTITUTE_ID_DEFAULT`).
+**Option A – Script (from pilot folder, after `vercel login`):**
+```bash
+cd margai-ghost-tutor-pilot
+chmod +x scripts/push_env_to_vercel.sh
+./scripts/push_env_to_vercel.sh
+```
+This reads `.env` and runs `vercel env add` for each of: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `INSTITUTE_ID_DEFAULT`, `TELEGRAM_WEBHOOK_SECRET`. If the CLI prompts (e.g. “Add to Production?”), press Enter.
+
+**Option B – Manual:** Project → Settings → Environment Variables → Add each variable from your `.env` (same names as above). For secrets (keys, tokens), set **Environments** to **Production** and **Preview** only (uncheck Development)—then the **Sensitive** toggle becomes available.
+
+Then **redeploy** so the new env vars are used: Deployments → … on latest → Redeploy, or run `npx vercel --prod`.
+
+**If build fails** with “pattern doesn’t match any Serverless Functions”: the repo’s `vercel.json` may be outdated. Push the current `vercel.json` (it targets `api/telegram_webhook.py` explicitly) to your `main` branch and redeploy from Vercel.
 
 **7.2** Get your deployment URL (e.g. `https://margai-ghost-tutor-xxx.vercel.app`) and set the Telegram webhook:
 

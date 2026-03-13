@@ -1,11 +1,17 @@
 """
 Environment config for MargAI Ghost Tutor pilot.
 Load from env; used by ingestion scripts and (via env) Vercel API.
+Loads pilot/.env when present (so scripts work from repo root).
 """
 import os
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings
+
+# Pilot root (margai-ghost-tutor-pilot/); .env lives here
+_PILOT_ROOT = Path(__file__).resolve().parents[1]
+_ENV_FILE = _PILOT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -32,7 +38,10 @@ class Settings(BaseSettings):
     # Alert email for ingestion failures (optional)
     alert_email: Optional[str] = None
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    model_config = {
+        "env_file": str(_ENV_FILE) if _ENV_FILE.exists() else ".env",
+        "extra": "ignore",
+    }
 
 
 def get_settings() -> Settings:
