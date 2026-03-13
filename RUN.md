@@ -179,7 +179,7 @@ This reads `.env` and runs `vercel env add` for each of: `SUPABASE_URL`, `SUPABA
 
 Then **redeploy** so the new env vars are used: Deployments → … on latest → Redeploy, or run `npx vercel --prod`.
 
-**If build fails** with “pattern doesn’t match any Serverless Functions”: the repo’s `vercel.json` may be outdated. Push the current `vercel.json` (it targets `api/telegram_webhook.py` explicitly) to your `main` branch and redeploy from Vercel.
+**If build fails** with “pattern doesn’t match any Serverless Functions”: (1) Ensure your repo has an `api` folder with `telegram_webhook.py` at the project root (or at the path set as “Root Directory” in Vercel). (2) Push the current `vercel.json` (pattern `api/*.py`, maxDuration 30) to your `main` branch and redeploy from Vercel.
 
 **7.2** Get your deployment URL (e.g. `https://margai-ghost-tutor-xxx.vercel.app`) and set the Telegram webhook:
 
