@@ -1,17 +1,17 @@
 # MargAI Ghost Tutor – 14-day pilot exploration
 
-**Purpose:** Understand and plan the bare-minimum pilot. No implementation yet.
+**Purpose:** Design and context for the bare-minimum pilot. **Implementation:** Vercel (Telegram webhook) + Python scripts (ingestion, weekly report, cleanup); see [RUN.md](RUN.md) and [PLAN.md](PLAN.md).
 
 ---
 
 ## 1. Codebase and context
 
-- **No existing MargAI/Ghost Tutor code** in this repo. The pilot is greenfield.
+- **Pilot implementation** in this repo: **Vercel** serverless for the Telegram webhook (`api/telegram_webhook.py`), **Python scripts** for ingestion (`scripts/ingest_pdf.py`), weekly report (`scripts/weekly_report.py`), and log cleanup (`scripts/cleanup_logs.py`). No n8n in the current pilot.
 - **Reusable context in repo:**
-  - `upsc-test-engine/` uses **Gemini** (REST + SDK), **PDF upload** (POST, save to `upload_dir`), and **PDF extraction** (pdfplumber, PyMuPDF, OCR via `pdf_extraction_service.py`). For MargAI we **reuse the upload system** (manual PDF upload; no sheet/download). Orchestration: n8n + serverless; we reuse concepts (chunk size, system prompt, “answer from context only”) not the code.
-  - `create_kolkata_salary_presentation.py` and similar scripts show Python/script usage in the workspace; no direct reuse for n8n.
+  - `upsc-test-engine/` provides **PDF extraction** (pdfplumber, PyMuPDF, OCR via `pdf_extraction_service.py`). The ingestion script runs from repo root and **reuses** `extract_hybrid()` when available; same chunk/embed concepts (800–1000 chars, overlap, “answer from context only”).
+  - Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per `institute_id`), Gemini (embedding + gemini-2.5-flash for RAG).
 
-**Conclusion:** Pilot: **Telegram** for students; **manual PDF ingestion** (teacher sends PDFs via Drive/WhatsApp → you run script to process and upsert to Pinecone with `namespace = institute_id`; see §5.2). n8n workflows, Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per institute). Contact info (`email_for_report`, `ta_telegram_id`) in `institutes`. WhatsApp in Month 2 (§5.4).
+**Conclusion:** Pilot: **Telegram** for students; **manual PDF ingestion** (teacher sends PDFs via Drive/WhatsApp → you run `ingest_pdf.py` to process and upsert to Pinecone with `namespace = institute_id`; see §5.2). **Vercel** hosts the webhook; **scripts** handle ingestion, report, cleanup. Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per institute). Contact info (`email_for_report`, `ta_telegram_id`) in `institutes`. WhatsApp in Month 2 (§5.4).
 
 ---
 
@@ -19,11 +19,11 @@
 
 | Component | Role in pilot | Notes |
 |-----------|----------------|--------|
-| **n8n (self-hosted)** | Orchestration: **manual PDF upload** (reuse upsc-test-engine upload) → backend extraction (text+OCR) → chunk → embed → Pinecone; webhook, Supabase, email. No sheet for PDF. | Ingestion: user **manually uploads** PDF; no "read sheet → download PDF". **No cron/scheduled triggers** — ingestion, weekly report, and log cleanup are all manual (run when you want). |
-| **Supabase** | Tables: `institutes`, `uploads`, `query_logs`. No auth/dashboard. n8n uses **service role** key (bypasses RLS). | RLS with `institute_id = 1` for defense in depth if anon key is ever used. |
+| **Vercel** | Hosts the **Telegram webhook** (`api/telegram_webhook.py`): receives updates, maps `chat_id` → `institute_id`, runs RAG (embed → Pinecone → Gemini), replies or clarify / escalate. Uses **service role** for Supabase; env vars set in Vercel dashboard. | Deploy with `vercel`; set webhook URL to `https://<your-app>/api/telegram_webhook`. Ingestion, weekly report, cleanup are **manual scripts** run locally. |
+| **Supabase** | Tables: `institutes`, `uploads`, `query_logs`. No auth/dashboard. Webhook and scripts use **service role** key (bypasses RLS). | RLS with `institute_id = 1` for defense in depth if anon key is ever used. |
 | **Pinecone serverless** | One **namespace per institute** = `institute_id` (or slug). Create index with dimension matching embedding model (e.g. **768**). | **Multi-tenancy:** Upsert with `namespace: institute_id`. Backend identifies which bot/institute a message belongs to and queries **only that namespace**. Institute A never sees Institute B data. |
-| **Telegram** | **14-day pilot:** One bot (e.g. @MargAI_Success_Bot). Inbound → webhook or long polling; outbound → Bot API. | Free, ~5 min setup. Use pilot for success stories; pivot to **WhatsApp API** (paid) in Month 2. |
-| **Google Gemini** | (1) **Embedding:** e.g. `text-embedding-004` or Gemini embedding API (e.g. `gemini-embedding-001` → 768 dim). (2) **Chat/vision:** **Gemini 2.5 only** (Gemini 2.0 deprecated). Use **gemini-2.5-flash** (stable 2.5 multimodal, free tier + vision). | n8n: “Embeddings Google Gemini” node; for generateContent (text + optional image) use HTTP Request or “Google Gemini” node. |
+| **Telegram** | **14-day pilot:** One bot. Inbound → **webhook** (Vercel URL); outbound → Bot API from webhook. | Free, ~5 min setup. Pivot to **WhatsApp API** (paid) in Month 2. |
+| **Google Gemini** | (1) **Embedding:** `models/gemini-embedding-001` with `output_dimensionality=768`. (2) **Chat/vision:** **gemini-2.5-flash** (multimodal, free tier). | Embedding in `lib/embedding.py` (ingestion + webhook). RAG uses same model for generateContent. |
 
 ---
 
@@ -31,26 +31,26 @@
 
 ### 3.1 PDF ingestion
 
-- **Trigger:** **Manual upload** only. User manually uploads the PDF; no sheet, no download. After upload, run extraction + chunk + embed + Pinecone (e.g. “Run workflow” in n8n or a manual trigger node).
-- **Input:** (1) **PDF:** Manual upload only (reuse upsc-test-engine: `POST /documents/upload` pattern — save to `upload_dir` as `{doc_id}.pdf`; see `upsc-test-engine/backend/app/api/documents.py`). (2) **Institute namespace:** **Manual input field** for institute name/slug, with **uniqueness validation** (check slug not already used, e.g. Pinecone namespaces or Supabase slugs table). (3) Sheet only for `email_for_report`, `ta_whatsapp_number` (not for PDF). PDF is **not** from the sheet. User **manually uploads** the PDF; reuse the upload system from upsc-test-engine (see below).
+- **Trigger:** **Manual** — run `scripts/ingest_pdf.py` when you have a PDF to ingest (e.g. after teacher sends via Drive/WhatsApp). No sheet; you pass PDF path and institute slug. See RUN.md.
+- **Input:** (1) **PDF:** Local path to the PDF (teacher sends file; you save it and pass path to the script). (2) **Institute:** Institute slug or `institute_id` (script maps to Pinecone namespace). Uniqueness: ensure institute exists in Supabase `institutes`; namespace = `institute_id`. (3) Contact info (`email_for_report`, `ta_telegram_id`) lives in `institutes` table, not a sheet.
 - **Logic:**
   - **Slug:** From manual input field (institute name → lowercase, spaces/special chars → hyphen). Validate uniqueness before upserting.
   - **Extract text + OCR:** Use **same detection logic as upsc-test-engine** (both native text and OCR). Latency is not an issue (backend). Reference: `upsc-test-engine/backend/app/services/pdf_extraction_service.py` — `extract_hybrid()`, constants, and `_should_run_ocr_for_page`:
     - **Native text:** PyMuPDF blocks + pdfplumber layout; per-page mojibake fix.
     - **OCR trigger per page:** native text &lt; threshold (e.g. 100 chars) OR garbled heuristics (Latin-1 supplement ratio, first-2-pages header threshold, garbled-pattern count). Doc-level: if total native text &lt; 5000 chars, treat as image-heavy → OCR all pages.
     - **OCR:** Tesseract hin+eng, OpenCV preprocessing (gray, adaptive threshold, denoise), ftfy, noise-line filter. Parallel OCR for pages that need it. Merge: use OCR when OCR length ≥ native × 0.8 or OCR &gt; native.
-  - Implementation option: (A) n8n calls a **small backend service** (e.g. FastAPI) that receives PDF bytes or URL, runs `extract_hybrid()`, returns full text; or (B) replicate the logic in an n8n-executable form (e.g. Code node with PDF libs if available, or subprocess). For “same logic,” (A) reusing `pdf_extraction_service.py` is the most accurate; latency is acceptable.
+  - **Pilot:** The ingestion script runs from repo root and calls `extract_hybrid()` from upsc-test-engine when available (same logic as `pdf_extraction_service.py`).
   - Chunk: 800–1000 chars, overlap (e.g. 100–200 chars). Output `{ text, id }` with stable IDs (e.g. `slug + hash(file_path + chunk_index)`).
-  - Embed: Embeddings Google Gemini; get vectors.
-  - Upsert: Pinecone (namespace = slug). HTTP Request to Pinecone REST if n8n node doesn’t support namespace cleanly.
-- **Dependencies:** Backend upload endpoint (reuse upsc-test-engine), Gemini API key, Pinecone API key + index. Sheet only for TA/email (read last row when escalating and for weekly report).
+  - Embed: Gemini via `lib/embedding.py` (768 dim).
+  - Upsert: Pinecone with `namespace = institute_id` (or slug).
+- **Dependencies:** Gemini API key, Pinecone API key + index, Supabase. TA/email from `institutes` table.
 - **Edge cases:** Invalid/empty PDF → reject at upload; extraction failure → email to **ALERT_EMAIL**. Duplicate slug → uniqueness validation rejects or warns.
 
 ---
 
 ### 3.2 Student Telegram interaction (pilot)
 
-- **Trigger:** Telegram webhook or long polling when a message is received (14-day pilot uses Telegram; WhatsApp in Month 2 — see §5.4).
+- **Trigger:** **Telegram webhook** (Vercel) when a message is received (14-day pilot uses Telegram; WhatsApp in Month 2 — see §5.4).
 - **Requirement:** Respond quickly; then process (sync or async). **Security:** Validate Telegram secret token in webhook to avoid spoofed requests — see §10.
 - **Input:** Telegram update: `message.from.id` (user ID), `message.chat.id` (chat ID for replies), `message.text`, `message.photo` (array; use file_id to download via getFile). For images, use Bot API `getFile` to download media.
 - **Logic:**
@@ -78,20 +78,20 @@
 
 ### 3.3 Weekly insight report
 
-- **Trigger:** **Manual** — run the workflow when you want the report. No schedule; you send the email yourself.
+- **Trigger:** **Manual** — run `scripts/weekly_report.py` when you want the report. No schedule; you send the email yourself (script outputs report text).
 - **Logic:**
   - Query Supabase: `query_logs` where `institute_id = 1` and `timestamp` in last 7 days.
-  - Keywords: three arrays (JEE, NEET, UPSC) — **start with placeholders from online research** (e.g. JEE: kinematics, thermodynamics, electrochemistry, chemical bonding; NEET: biology, anatomy, physiology; UPSC: polity, history, geography, economy, environment). Store as JSON in workflow. Count matches in `query_text` (string includes, case-insensitive).
+  - Keywords: three arrays (JEE, NEET, UPSC) — **start with placeholders from online research** (e.g. JEE: kinematics, thermodynamics, electrochemistry, chemical bonding; NEET: biology, anatomy, physiology; UPSC: polity, history, geography, economy, environment). Store as JSON in the script or config. Count matches in `query_text` (string includes, case-insensitive).
   - Compute: total queries, escalation % (where `escalated = true`), top 5 topics by count. Optionally: **top N students by query count** (GROUP BY `student_telegram_id`), and **which students had escalations** (rows where `escalated = true` with `student_telegram_id` / `student_name`) so the report shows who queries most and who escalated.
   - **Generate the email body text** (plain-text insight report with the summary above). Optionally include a "To:" line (e.g. from `email_for_report` from sheet last row) so you can copy and paste. **Do not send the email** — output the generated text only; you send the email manually.
-- **Dependencies:** Supabase. Sheet (or config) optional for "To:" in the generated text. No email-sending credentials needed.
+- **Dependencies:** Supabase. "To:" from `institutes.email_for_report`. No email-sending credentials in the script; you send the email manually.
 
 ---
 
 ### 3.4 Log cleanup
 
-- **Trigger:** **Manual** — run the workflow when you want to prune old logs. No schedule.
-- **Logic:** Delete from `query_logs` where `timestamp` < now − 30 days. Supabase node “Delete” with filter, or raw SQL via Supabase (if supported) / HTTP.
+- **Trigger:** **Manual** — run `scripts/cleanup_logs.py` when you want to prune old logs. No schedule.
+- **Logic:** Delete from `query_logs` where `timestamp` < now − 30 days. Script uses Supabase client (see `scripts/cleanup_logs.py`).
 
 ---
 
@@ -100,9 +100,9 @@
 - **Table: `institutes`** (optional but recommended for multi-institute)
   - `id` (int, **auto-generated** — `SERIAL` or `GENERATED BY DEFAULT AS IDENTITY`, PK). Supabase/Postgres generates 1, 2, 3… on INSERT.
   - `slug` (text, unique, not null) — e.g. `fiitjee-kolkata`; used as Pinecone namespace.
-  - `email_for_report` (text, nullable) — where to send the weekly insight report (plain-text email). Can be set from sheet or manually; workflows read from here instead of sheet.
+  - `email_for_report` (text, nullable) — where to send the weekly insight report (plain-text email). Can be set from sheet or manually; scripts and webhook read from here (not a sheet).
   - `ta_telegram_id` (text, nullable) — **Pilot:** Telegram user/chat ID for TA; used when escalating (send full student message here). Month 2: add `ta_whatsapp_number` when offering WhatsApp.
-  - Optionally: `created_at` (timestamptz). When adding an institute, `INSERT INTO institutes (slug, email_for_report, ta_telegram_id) VALUES (...) RETURNING id` gives the new `institute_id`. You can sync these from the sheet (e.g. "last row") into `institutes` so workflows read from Supabase instead of the sheet.
+  - Optionally: `created_at` (timestamptz). When adding an institute, `INSERT INTO institutes (slug, email_for_report, ta_telegram_id) VALUES (...) RETURNING id` gives the new `institute_id`. You can sync these from the sheet (e.g. "last row") into `institutes` so scripts read from Supabase (no sheet).
 - **Table: `uploads`** — track PDF uploads per institute (audit trail, status, link to ingestion).
   - `id` (uuid, default gen_random_uuid(), PK)
   - `institute_id` (int, not null, FK → `institutes.id`)
@@ -122,20 +122,20 @@
   - Optionally: `clarification_sent` (boolean, default false) — set true when we send the "clarifying question" after ESCALATE; used to know which row to escalate when the student later replies "escalate".
   - Optionally: `replied_at` (timestamptz, nullable) or `status` (e.g. `pending` | `replied` | `failed`) — if you process webhooks **async** (return 200 then process later), you need a way to find rows that were never replied to so you can retry or alert. Prefer setting `replied_at = now()` when the reply is successfully sent to the student (or when escalation message is sent to TA).
 - **Identifying students:** Store `student_telegram_id` (and optionally `student_name`) on every insert from the Telegram webhook. Then: "who queries the most?" = aggregate by `student_telegram_id`; "who did this escalation come from?" = read `student_telegram_id` (and `query_text`) from the same row. When notifying the TA, include "From: {student_telegram_id}" or "From: {student_name}" in the message.
-- **Emails:** `email_for_report` and `ta_telegram_id` (pilot) live on `institutes`; no separate emails table. For alerts (e.g. ALERT_EMAIL), keep a single address in n8n env; optional: add `alert_email` (text) to `institutes` if you want per-institute alert targets.
-- **RLS:** Enable RLS; e.g. `FOR ALL USING (institute_id = 1)` for pilot so only institute 1 rows are visible when using non–service_role keys. n8n uses **service_role** and bypasses RLS.
+- **Emails:** `email_for_report` and `ta_telegram_id` (pilot) live on `institutes`; no separate emails table. For alerts (e.g. ALERT_EMAIL), keep a single address in env (e.g. Vercel); optional: add `alert_email` (text) to `institutes` if you want per-institute alert targets.
+- **RLS:** Enable RLS; e.g. `FOR ALL USING (institute_id = 1)` for pilot so only institute 1 rows are visible when using non–service_role keys. Webhook and scripts use **service_role** and bypass RLS.
 - **Auto-generated `institute_id`:** Yes — use an `institutes` table with `id` as `SERIAL` or `IDENTITY`; each new institute gets the next id automatically. For pilot, insert one row and use that id (typically 1) everywhere.
 
 ---
 
-## 5. n8n workflow structure (conceptual)
+## 5. Pilot implementation (Vercel + scripts)
 
-- **Workflow 1 – Ingestion (manual):** **Manual upload** (reuse upsc-test-engine upload) → Backend extraction (text+OCR, same logic as upsc-test-engine) → Code (chunk) → Embeddings Google Gemini → Pinecone upsert. Manual input: institute name/slug (with uniqueness validation). Error branch → email to ALERT_EMAIL.
-- **Workflow 2 – Telegram (pilot):** Webhook (verify secret_token) → Code (parse update; if incoming text is "escalate" and there is a recent row for this student with `clarification_sent = true`, treat as escalate that row → Supabase update + reply to student + notify TA via Telegram) → else insert Supabase → Embeddings Google Gemini (query text) → Pinecone query (namespace = institute_id) → Code (build prompt; Knowledge-lock §5.3) → HTTP Gemini generateContent (**gemini-2.5-flash**) → IF response === ESCALATE → send **clarifying question** to student (set `clarification_sent = true`); ELSE IF student previously asked to escalate → reply "We've escalated…" + get `ta_telegram_id` from `institutes` + Telegram to TA with full message; ELSE → Telegram sendMessage answer to student.
-- **Workflow 3 – Weekly report (manual):** Manual trigger → Supabase get rows (filter last 7 days, institute_id=1) → Code (keyword counts, top 5, escalation %, optional top students / who escalated) → **Generate email body text** (insight report). Optionally "To:" from `institutes.email_for_report` or sheet. Output = report text only; you send the email manually.
-- **Workflow 4 – Cleanup (manual):** Manual trigger → Supabase delete (timestamp < now − 30 days). Run when you want to prune old logs.
+- **Ingestion:** Run `scripts/ingest_pdf.py` with PDF path and institute slug. Script uses `extract_hybrid()` (from upsc-test-engine when available) → chunk → embed (`lib/embedding.py`) → Pinecone upsert (`namespace = institute_id`). On error, alert (e.g. ALERT_EMAIL).
+- **Telegram:** **Vercel** hosts `api/telegram_webhook.py`. Webhook verifies secret_token → parse update → if "escalate" + recent row with `clarification_sent = true` then escalate that row (Supabase update, reply to student, notify TA); else insert `query_logs` → embed query → Pinecone query (namespace = institute_id) → build prompt (Knowledge-lock §5.3) → Gemini generateContent (gemini-2.5-flash) → if ESCALATE then send clarifying question (`clarification_sent = true`); else if student asked to escalate then reply "We've escalated…" + Telegram to TA; else send answer to student.
+- **Weekly report:** Run `scripts/weekly_report.py`. Script reads Supabase (last 7 days, institute_id), computes keyword counts, top topics, escalation %, optional top students → outputs email body text; you send the email manually. "To:" from `institutes.email_for_report`.
+- **Cleanup:** Run `scripts/cleanup_logs.py`. Deletes `query_logs` where `timestamp` < now − 30 days.
 
-Pinecone: use `namespace = institute_id` when upserting/querying. If the n8n Pinecone node does not support namespace and raw upsert cleanly, use **HTTP Request** to Pinecone Data API (upsert/query with `namespace` in body).
+Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion script and webhook).
 
 ---
 
@@ -190,32 +190,32 @@ Pinecone: use `namespace = institute_id` when upserting/querying. If the n8n Pin
 
 - **Failed upload/extraction:** On invalid PDF or extraction failure → send email to **ALERT_EMAIL**. Set `uploads.status = 'failed'` and `error_message` so rows don't stay in `processing`.
 - **API failures (Gemini, Pinecone, Telegram):** In Telegram flow, try/catch; on failure send email to **ALERT_EMAIL** and reply to user “Something went wrong, please try again.”
-- **Webhook timeout:** Keep webhook handler minimal (e.g. insert to Supabase + return 200); process in same workflow after response if n8n allows, or use a queue (e.g. “Execute Workflow” trigger) so provider gets 200 quickly. **Recommendation:** Return 200 within ~3s then process async; use `replied_at` and retry unreplied rows (e.g. `replied_at IS NULL` and `created_at` in last 1 hour).
+- **Webhook timeout:** Keep webhook handler minimal (e.g. insert to Supabase + return 200); process in same request or use a queue (e.g. “Execute Workflow” trigger) so provider gets 200 quickly. **Recommendation:** Return 200 within ~3s then process async; use `replied_at` and retry unreplied rows (e.g. `replied_at IS NULL` and `created_at` in last 1 hour).
 
 ---
 
 ## 7. Suggested manual test steps
 
-1. **Ingestion:** Manually upload a PDF (via upload UI/API reused from upsc-test-engine), enter institute name/slug in the manual input field (uniqueness validated). Run extraction + chunk + embed + Pinecone; check Pinecone dashboard for namespace and vector count.
+1. **Ingestion:** Run `scripts/ingest_pdf.py` with a PDF path and institute slug (see RUN.md). Check Pinecone dashboard for namespace and vector count.
 2. **Telegram text:** Send a text message to the Telegram bot; confirm reply from Gemini and one new row in `query_logs`.
 3. **Telegram photo:** Send a photo with a question; confirm reply or escalation; if escalation, confirm TA receives the **full message** (student text + student image as sent) via Telegram.
 4. **Clarify then escalate:** Ask something off-topic or not in the PDF; expect clarifying question first (e.g. add more detail or reply escalate). Reply with "escalate"; then expect escalation confirmation and TA receiving full message (From: student, text/image).
-5. **Weekly report:** Run the weekly report workflow manually; copy the **generated email text** (insight report) and send the email yourself to `email_for_report`. Confirm the report contains total queries, escalation %, top topics.
-6. **Cleanup:** Insert an old row (or backdate in DB for test), run cleanup workflow, confirm row deleted.
+5. **Weekly report:** Run `scripts/weekly_report.py`; copy the **generated email text** and send it yourself to `email_for_report`. Confirm the report contains total queries, escalation %, top topics.
+6. **Cleanup:** Insert an old row (or backdate in DB for test), run `scripts/cleanup_logs.py`, confirm row deleted.
 
 ---
 
 ## 8. Ambiguities and questions for you
 
-1. **PDF URL type:** Should we assume “direct” PDF URLs only (e.g. S3, public link that returns `Content-Type: application/pdf`), or do you want support for **Google Drive** “share” links (which often need redirect handling or export format)? If Drive is required, we need a small helper (e.g. replace `/file/d/ID` with export URL) in the workflow.
+1. **PDF URL type:** Should we assume “direct” PDF URLs only (e.g. S3, public link that returns `Content-Type: application/pdf`), or do you want support for **Google Drive** “share” links (which often need redirect handling or export format)? If Drive is required, we need a small helper (e.g. replace `/file/d/ID` with export URL) in the ingestion script.
 
-2. **Webhook response time:** Telegram allows a few seconds. Full flow (Supabase insert → embed → Pinecone → Gemini → Telegram reply) can exceed that. Prefer: (A) webhook only inserts to Supabase and returns 200, then a **separate workflow** (run manually or on a timer, e.g. every 1 min) processes new `query_logs` rows that don’t have a “replied” flag yet; or (B) we accept risk and run the whole flow in the webhook (and hope it’s under 3s for simple queries)? (A) is safer for production.
+2. **Webhook response time:** Telegram allows a few seconds. Full flow (Supabase insert → embed → Pinecone → Gemini → Telegram reply) can exceed that. Prefer: (A) webhook only inserts to Supabase and returns 200, then a **separate process** (e.g. run manually or on a timer, e.g. every 1 min) processes new `query_logs` rows that don’t have a “replied” flag yet; or (B) we accept risk and run the whole flow in the webhook (and hope it’s under 3s for simple queries)? (A) is safer for production.
 
 3. **Embedding model and dimension:** Confirm embedding model (e.g. `gemini-embedding-001`) and **vector dimension** (e.g. 768) so the Pinecone index is created correctly.
 
 4. **Institute slug (resolved):** **Manual input field** for institute name/slug. **Uniqueness validation** (e.g. check Pinecone namespaces or Supabase slugs table) so no duplicate slug.
 
-5. **Alert email (resolved):** **Single address** in n8n env (e.g. `ALERT_EMAIL`). Use for all error/alert emails.
+5. **Alert email (resolved):** **Single address** in env (e.g. Vercel `ALERT_EMAIL`). Use for all error/alert emails.
 
 6. **Topic keywords (resolved):** **Start with placeholders from online research** (JEE/NEET/UPSC). Refine later; see §3.3 for example terms.
 
@@ -226,8 +226,8 @@ Pinecone: use `namespace = institute_id` when upserting/querying. If the n8n Pin
 ## 9. Phasing (3 steps)
 
 - **Phase 1 – Ingestion + storage:** Supabase schema; **manual upload** (or script from teacher's Drive/WhatsApp PDFs; see §5.2) → backend text+OCR → chunk → embed → Pinecone upsert (namespace = institute_id). Manual input: institute name/slug (uniqueness validation). No Telegram bot yet. Validate: uploaded PDF → Pinecone namespace with vectors.
-- **Phase 2 – Telegram + RAG (pilot):** Webhook workflow (verify secret_token): receive Telegram message → log to Supabase → Pinecone retrieval (namespace = institute_id) → Gemini (Knowledge-lock prompt §5.3) → reply or clarify → escalate (reply to student, then notify TA via Telegram from `institutes.ta_telegram_id`). Manual test with text and photo.
-- **Phase 3 – Reports + cleanup:** Weekly report workflow: **manual run**, generate insight report email text (you send email manually). Cleanup workflow: **manual run** when you want to prune old logs. Error-handling emails.
+- **Phase 2 – Telegram + RAG (pilot):** Webhook (Vercel; verify secret_token): receive Telegram message → log to Supabase → Pinecone retrieval (namespace = institute_id) → Gemini (Knowledge-lock prompt §5.3) → reply or clarify → escalate (reply to student, then notify TA via Telegram from `institutes.ta_telegram_id`). Manual test with text and photo.
+- **Phase 3 – Reports + cleanup:** Weekly report script: **manual run** (`scripts/weekly_report.py`), generate insight report email text (you send email manually). Cleanup script: **manual run** (`scripts/cleanup_logs.py`) when you want to prune old logs. Error-handling emails.
 
 Once you confirm the open points above, this exploration is enough to implement the pilot step by step.
 
@@ -237,8 +237,8 @@ Once you confirm the open points above, this exploration is enough to implement 
 
 - **Security**
   - **Webhook spoofing:** The webhook URL is public; anyone could POST and inject fake `query_logs` or trigger flows. **Mitigation:** Verify Telegram webhook secret_token (validate before processing). For WhatsApp in Month 2, use provider signature verification (WATI/Interakt). Reject requests with invalid or missing signature.
-  - **Secrets:** Keep Supabase **service_role** key, Gemini API key, and Telegram bot token (pilot; WhatsApp credentials in Month 2) in n8n env (or a secrets manager). Never commit them or log them.
-  - **PII:** `query_logs` contains PII (student_telegram_id, student_name, query_text). Restrict access (RLS, service_role only from n8n). Retention: 30-day cleanup is documented; ensure that matches your policy.
+  - **Secrets:** Keep Supabase **service_role** key, Gemini API key, and Telegram bot token (pilot; WhatsApp credentials in Month 2) in Vercel env (or a secrets manager). Never commit them or log them.
+  - **PII:** `query_logs` contains PII (student_telegram_id, student_name, query_text). Restrict access (RLS, service_role only from webhook/scripts). Retention: 30-day cleanup is documented; ensure that matches your policy.
 
 - **Latency and timeouts**
   - **Webhook 3s limit:** Full flow (embed → Pinecone → Gemini → send) often exceeds 3s. **Mitigation:** Webhook inserts to Supabase and returns 200; a separate step (manual run or timer) processes and replies. Otherwise the provider may retry (duplicate) or mark delivery failed.
