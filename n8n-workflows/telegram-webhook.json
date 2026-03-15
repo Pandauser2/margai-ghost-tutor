@@ -1,1 +1,309 @@
-{}
+{
+  "name": "Telegram Ghost Tutor Webhook",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "telegram-ghost-tutor",
+      "parameters": {
+        "path": "webhook",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "responseCode": 200,
+        "options": {
+          "rawBody": false
+        }
+      },
+      "notesInFlow": true
+    },
+    {
+      "id": "set-context",
+      "name": "Set institute_id and parse",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "institute_id", "name": "institute_id", "value": 1, "type": "number" },
+            { "id": "student_telegram_id", "name": "student_telegram_id", "value": "={{ $json.body.message.from.id }}", "type": "string" },
+            { "id": "student_name", "name": "student_name", "value": "={{ $json.body.message.from.first_name || '' }}", "type": "string" },
+            { "id": "query_text", "name": "query_text", "value": "={{ $json.body.message.text || '' }}", "type": "string" },
+            { "id": "is_photo", "name": "is_photo", "value": "={{ !!$json.body.message.photo }}", "type": "boolean" },
+            { "id": "chat_id", "name": "chat_id", "value": "={{ $json.body.message.chat.id }}", "type": "number" },
+            { "id": "photo_file_id", "name": "photo_file_id", "value": "={{ $json.body.message.photo && $json.body.message.photo.slice(-1)[0].file_id }}", "type": "string" },
+            { "id": "update_id", "name": "update_id", "value": "={{ $json.body.update_id }}", "type": "number" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "supabase-insert",
+      "name": "Supabase Insert query_logs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "parameters": {
+        "operation": "insert",
+        "tableId": "query_logs",
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "institute_id", "fieldValue": "={{ $json.institute_id }}" },
+            { "fieldId": "student_telegram_id", "fieldValue": "={{ $json.student_telegram_id }}" },
+            { "fieldId": "student_name", "fieldValue": "={{ $json.student_name }}" },
+            { "fieldId": "query_text", "fieldValue": "={{ $json.query_text }}" },
+            { "fieldId": "is_photo", "fieldValue": "={{ $json.is_photo }}" },
+            { "fieldId": "escalated", "fieldValue": false }
+          ]
+        }
+      },
+      "credentials": { "supabaseApi": { "name": "Supabase account" } }
+    },
+    {
+      "id": "if-photo",
+      "name": "IF photo",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "cond-photo", "leftValue": "={{ $json.is_photo }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-getfile",
+      "name": "Telegram getFile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, -100],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $('Set institute_id and parse').item.json.photo_file_id }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "merge-for-embed",
+      "name": "Merge for embed",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1100, 0],
+      "parameters": { "mode": "combine", "mergeByFields": { "values": [] }, "options": {} }
+    },
+    {
+      "id": "embed-query",
+      "name": "Embed query (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [1320, 0],
+      "parameters": { "model": "embedding-001", "dimensions": 768 },
+      "credentials": { "googleGeminiApi": { "name": "Google Gemini API" } }
+    },
+    {
+      "id": "pinecone-query",
+      "name": "Pinecone query",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1,
+      "position": [1540, 0],
+      "parameters": {
+        "indexName": "={{ $env.PINECONE_INDEX_NAME }}",
+        "namespace": "1",
+        "options": { "topK": 8 }
+      },
+      "credentials": { "pineconeApi": { "name": "Pinecone API" } }
+    },
+    {
+      "id": "gemini-chat",
+      "name": "Gemini Chat (gemini-2.5-flash)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1760, 0],
+      "parameters": {
+        "model": "gemini-2.5-flash",
+        "options": {
+          "systemMessage": "You are an assistant for the institute. Use ONLY the provided context to answer. If the answer is not in the context, do not make it up. If context doesn't answer or you are unsure, respond with exactly: ESCALATE. Allow general logic to explain steps; never introduce new facts not in the context."
+        }
+      },
+      "credentials": { "googleGeminiApi": { "name": "Google Gemini API" } }
+    },
+    {
+      "id": "if-escalate",
+      "name": "IF response == ESCALATE",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1980, 0],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            { "leftValue": "={{ $json.text.trim().toUpperCase() }}", "rightValue": "ESCALATE", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "telegram-clarify",
+      "name": "Telegram clarifying question",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2200, -100],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Set institute_id and parse').item.json.chat_id }}",
+        "text": "I couldn't find a clear answer in your study material. Could you add a bit more detail (e.g. chapter or topic) or rephrase? If you'd prefer to send this to your TA, reply with **escalate**."
+      },
+      "credentials": { "telegramApi": { "name": "Telegram API" } }
+    },
+    {
+      "id": "supabase-clarification-sent",
+      "name": "Supabase update clarification_sent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2420, -100],
+      "parameters": {
+        "operation": "update",
+        "tableId": "query_logs",
+        "filterType": "manual",
+        "matchFields": "id",
+        "matchFieldValue": "={{ $('Supabase Insert query_logs').item.json.id }}",
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "clarification_sent", "fieldValue": true }
+          ]
+        }
+      },
+      "credentials": { "supabaseApi": { "name": "Supabase account" } }
+    },
+    {
+      "id": "telegram-reply-answer",
+      "name": "Telegram reply with answer",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2200, 100],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Set institute_id and parse').item.json.chat_id }}",
+        "text": "={{ $json.text }}"
+      },
+      "credentials": { "telegramApi": { "name": "Telegram API" } }
+    },
+    {
+      "id": "respond-200",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2640, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true }",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "email-alert",
+      "name": "Email ALERT_EMAIL on failure",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2640, 200],
+      "parameters": {
+        "to": "={{ $env.ALERT_EMAIL }}",
+        "subject": "MargAI Ghost Tutor webhook error",
+        "text": "=Webhook or RAG failed. Error: {{ $json.error?.message || 'Unknown' }}"
+      },
+      "credentials": { "smtp": { "name": "SMTP" } },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Set institute_id and parse", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set institute_id and parse": {
+      "main": [
+        [{ "node": "Supabase Insert query_logs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase Insert query_logs": {
+      "main": [
+        [{ "node": "IF photo", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF photo": {
+      "main": [
+        [{ "node": "Telegram getFile", "type": "main", "index": 0 }],
+        [{ "node": "Merge for embed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram getFile": {
+      "main": [
+        [{ "node": "Merge for embed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge for embed": {
+      "main": [
+        [{ "node": "Embed query (Gemini)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Embed query (Gemini)": {
+      "main": [
+        [{ "node": "Pinecone query", "type": "main", "index": 0 }]
+      ]
+    },
+    "Pinecone query": {
+      "main": [
+        [{ "node": "Gemini Chat (gemini-2.5-flash)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gemini Chat (gemini-2.5-flash)": {
+      "main": [
+        [{ "node": "IF response == ESCALATE", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF response == ESCALATE": {
+      "main": [
+        [{ "node": "Telegram clarifying question", "type": "main", "index": 0 }],
+        [{ "node": "Telegram reply with answer", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram clarifying question": {
+      "main": [
+        [{ "node": "Supabase update clarification_sent", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase update clarification_sent": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram reply with answer": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {}
+}
