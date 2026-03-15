@@ -7,8 +7,8 @@ Copy-paste bash commands and minimal manual steps. Assumes you're in the **monor
 ## 1. Prerequisites
 
 - Python 3.10+
-- Node.js (for Vercel CLI)
 - Accounts: Supabase, Pinecone, Google AI (Gemini), Telegram Bot
+- Access to an **n8n** instance (cloud or self‑hosted) where you can import the workflow JSON
 
 ---
 
@@ -121,13 +121,20 @@ INSTITUTE_ID_DEFAULT=1
 
 Do not commit `.env` to git (it should be in `.gitignore`).
 
-**5.2** Install Python deps (from repo root; use a venv if you prefer):
+**5.2** Install Python deps for the **scripts** (from repo root; use a venv if you prefer):
 
 ```bash
 cd /Users/rajeshmukherjee/Desktop/04_Data_Science/Projects/Cursor_test_project
 python3 -m venv margai-ghost-tutor-pilot/.venv
 source margai-ghost-tutor-pilot/.venv/bin/activate
-pip install -r margai-ghost-tutor-pilot/requirements.txt
+
+# Minimal set used by ingest + report scripts
+pip install \
+  "supabase-py>=2.4.0" \
+  "pinecone-client>=5.0.0" \
+  "google-generativeai>=0.7.0" \
+  "httpx>=0.27.0" \
+  "pymupdf>=1.24.0"
 ```
 
 ---
@@ -156,38 +163,27 @@ Expected: script runs without error; `uploads` and Pinecone namespace `1` get da
 
 ---
 
-## 7. Deploy webhook (Vercel)
+## 7. Wire up Telegram webhook (n8n)
 
-**New to Vercel?** Follow **[docs/VERCEL_STEP_BY_STEP.md](docs/VERCEL_STEP_BY_STEP.md)** for a full walkthrough (push to GitHub, redeploy, set Telegram webhook) with no prior deployment experience.
+**7.1** Import the workflow into n8n:
 
-**7.1** Install Vercel CLI and deploy from the **pilot** directory:
+- Open your n8n instance → **Workflows** → **Import from File**.
+- Choose `margai-ghost-tutor-pilot/n8n-workflows/telegram-webhook.json`.
+- After import, open the workflow **Telegram Ghost Tutor Webhook**.
+- In **Credentials** for Supabase, Pinecone, Gemini, Telegram, and SMTP, select or create credentials that match your `.env` values.
 
-```bash
-cd /Users/rajeshmukherjee/Desktop/04_Data_Science/Projects/Cursor_test_project/margai-ghost-tutor-pilot
-npx vercel --yes
-```
+See `n8n-workflows/README-telegram-webhook.md` for node-by-node details and how the clarify → escalate path works.
 
-Follow prompts (link existing project or create new). **Set env vars in Vercel** (choose one):
+**7.2** Get the Production Webhook URL from n8n:
 
-**Option A – Script (from pilot folder, after `vercel login`):**
-```bash
-cd margai-ghost-tutor-pilot
-chmod +x scripts/push_env_to_vercel.sh
-./scripts/push_env_to_vercel.sh
-```
-This reads `.env` and runs `vercel env add` for each of: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `INSTITUTE_ID_DEFAULT`, `TELEGRAM_WEBHOOK_SECRET`. If the CLI prompts (e.g. “Add to Production?”), press Enter.
+- Click the **Webhook** node → copy the **Production URL** (not the Test URL). It will look like:  
+  `https://<your-n8n-host>/webhook/webhook` (path may differ if you change it).
 
-**Option B – Manual:** Project → Settings → Environment Variables → Add each variable from your `.env` (same names as above). For secrets (keys, tokens), set **Environments** to **Production** and **Preview** only (uncheck Development)—then the **Sensitive** toggle becomes available.
-
-Then **redeploy** so the new env vars are used: Deployments → … on latest → Redeploy, or run `npx vercel --prod`.
-
-**If build fails** with “pattern doesn’t match any Serverless Functions”: (1) Ensure your repo has an `api` folder with `telegram_webhook.py` at the project root (or at the path set as “Root Directory” in Vercel). (2) Push the current `vercel.json` (pattern `api/*.py`, maxDuration 30) to your `main` branch and redeploy from Vercel.
-
-**7.2** Get your deployment URL (e.g. `https://margai-ghost-tutor-xxx.vercel.app`) and set the Telegram webhook:
+**7.3** Set Telegram webhook to point to n8n:
 
 ```bash
-# Replace BOT_TOKEN and YOUR_VERCEL_URL
-curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<YOUR_VERCEL_URL>/api/telegram_webhook"
+# Replace BOT_TOKEN and YOUR_N8N_WEBHOOK_URL
+curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=<YOUR_N8N_WEBHOOK_URL>"
 ```
 
 If you use a secret token:
@@ -195,8 +191,13 @@ If you use a secret token:
 ```bash
 curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://<YOUR_VERCEL_URL>/api/telegram_webhook","secret_token":"<TELEGRAM_WEBHOOK_SECRET>"}'
+  -d '{"url":"<YOUR_N8N_WEBHOOK_URL>","secret_token":"<TELEGRAM_WEBHOOK_SECRET>"}'
 ```
+
+**7.4** Quick manual test:
+
+- Send a simple text question to your bot in Telegram.
+- Expect a RAG answer (if your PDF for `institute_id=1` covers it) and a new row in `query_logs`.
 
 ---
 
@@ -228,8 +229,7 @@ Current behavior: if no mapping is found, `institute_id = INSTITUTE_ID_DEFAULT`.
 | Institute | `INSERT INTO institutes ...` (id=1, slug=test-institute) |
 | Pinecone | Create index dimension 768, name `margai-ghost-tutor` |
 | Env | `cp .env.example .env` and fill in keys |
-| Deps | `pip install -r margai-ghost-tutor-pilot/requirements.txt` |
+| Deps | Create venv + `pip install` deps from §5.2 |
 | Local test | `python3 margai-ghost-tutor-pilot/scripts/test_ingest_local.py manual-qc-pdfs/small_test_upsc.pdf test-institute` |
 | Ingest | `python3 margai-ghost-tutor-pilot/scripts/ingest_pdf.py manual-qc-pdfs/small_test_upsc.pdf test-institute` (from repo root, .env set) |
-| Deploy | `cd margai-ghost-tutor-pilot && npx vercel --yes` |
-| Webhook | `curl ... setWebhook?url=https://<YOUR_VERCEL_URL>/api/telegram_webhook` |
+| Webhook | Import `n8n-workflows/telegram-webhook.json` into n8n + call Telegram `setWebhook` with n8n Production URL |

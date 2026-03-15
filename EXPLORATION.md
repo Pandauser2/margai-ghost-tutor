@@ -1,17 +1,17 @@
 # MargAI Ghost Tutor – 14-day pilot exploration
 
-**Purpose:** Design and context for the bare-minimum pilot. **Implementation:** Vercel (Telegram webhook) + Python scripts (ingestion, weekly report, cleanup); see [RUN.md](RUN.md) and [PLAN.md](PLAN.md).
+**Purpose:** Design and context for the bare-minimum pilot. **Implementation:** n8n (Telegram webhook) + Python scripts (ingestion, weekly report, cleanup); see [RUN.md](RUN.md) and [PLAN.md](PLAN.md).
 
 ---
 
 ## 1. Codebase and context
 
-- **Pilot implementation** in this repo: **Vercel** serverless for the Telegram webhook (`api/telegram_webhook.py`), **Python scripts** for ingestion (`scripts/ingest_pdf.py`), weekly report (`scripts/weekly_report.py`), and log cleanup (`scripts/cleanup_logs.py`). No n8n in the current pilot.
+- **Pilot implementation** in this repo: **n8n** workflow for the Telegram webhook (`n8n-workflows/telegram-webhook.json`), **Python scripts** for ingestion (`scripts/ingest_pdf.py`), weekly report (`scripts/weekly_report.py`), and log cleanup (`scripts/cleanup_logs.py`). No Vercel in the current pilot.
 - **Reusable context in repo:**
   - `upsc-test-engine/` provides **PDF extraction** (pdfplumber, PyMuPDF, OCR via `pdf_extraction_service.py`). The ingestion script runs from repo root and **reuses** `extract_hybrid()` when available; same chunk/embed concepts (800–1000 chars, overlap, “answer from context only”).
   - Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per `institute_id`), Gemini (embedding + gemini-2.5-flash for RAG).
 
-**Conclusion:** Pilot: **Telegram** for students; **manual PDF ingestion** (teacher sends PDFs via Drive/WhatsApp → you run `ingest_pdf.py` to process and upsert to Pinecone with `namespace = institute_id`; see §5.2). **Vercel** hosts the webhook; **scripts** handle ingestion, report, cleanup. Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per institute). Contact info (`email_for_report`, `ta_telegram_id`) in `institutes`. WhatsApp in Month 2 (§5.4).
+**Conclusion:** Pilot: **Telegram** for students; **manual PDF ingestion** (teacher sends PDFs via Drive/WhatsApp → you run `ingest_pdf.py` to process and upsert to Pinecone with `namespace = institute_id`; see §5.2). **n8n** hosts the webhook; **scripts** handle ingestion, report, cleanup. Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per institute). Contact info (`email_for_report`, `ta_telegram_id`) in `institutes`. WhatsApp in Month 2 (§5.4).
 
 ---
 
@@ -19,10 +19,10 @@
 
 | Component | Role in pilot | Notes |
 |-----------|----------------|--------|
-| **Vercel** | Hosts the **Telegram webhook** (`api/telegram_webhook.py`): receives updates, maps `chat_id` → `institute_id`, runs RAG (embed → Pinecone → Gemini), replies or clarify / escalate. Uses **service role** for Supabase; env vars set in Vercel dashboard. | Deploy with `vercel`; set webhook URL to `https://<your-app>/api/telegram_webhook`. Ingestion, weekly report, cleanup are **manual scripts** run locally. |
+| **n8n** | Hosts the **Telegram webhook** (workflow `n8n-workflows/telegram-webhook.json`): receives updates, maps `chat_id` → `institute_id`, runs RAG (embed → Pinecone → Gemini), replies or clarify / escalate. Uses **service role** for Supabase; env vars loaded from n8n / environment. | Import workflow into n8n; set Webhook Production URL as Telegram webhook URL. Ingestion, weekly report, cleanup are **manual scripts** run locally. |
 | **Supabase** | Tables: `institutes`, `uploads`, `query_logs`. No auth/dashboard. Webhook and scripts use **service role** key (bypasses RLS). | RLS with `institute_id = 1` for defense in depth if anon key is ever used. |
 | **Pinecone serverless** | One **namespace per institute** = `institute_id` (or slug). Create index with dimension matching embedding model (e.g. **768**). | **Multi-tenancy:** Upsert with `namespace: institute_id`. Backend identifies which bot/institute a message belongs to and queries **only that namespace**. Institute A never sees Institute B data. |
-| **Telegram** | **14-day pilot:** One bot. Inbound → **webhook** (Vercel URL); outbound → Bot API from webhook. | Free, ~5 min setup. Pivot to **WhatsApp API** (paid) in Month 2. |
+| **Telegram** | **14-day pilot:** One bot. Inbound → **webhook** (n8n URL); outbound → Bot API from webhook. | Free, ~5 min setup. Pivot to **WhatsApp API** (paid) in Month 2. |
 | **Google Gemini** | (1) **Embedding:** `models/gemini-embedding-001` with `output_dimensionality=768`. (2) **Chat/vision:** **gemini-2.5-flash** (multimodal, free tier). | Embedding in `lib/embedding.py` (ingestion + webhook). RAG uses same model for generateContent. |
 
 ---
@@ -50,7 +50,7 @@
 
 ### 3.2 Student Telegram interaction (pilot)
 
-- **Trigger:** **Telegram webhook** (Vercel) when a message is received (14-day pilot uses Telegram; WhatsApp in Month 2 — see §5.4).
+- **Trigger:** **Telegram webhook** (n8n) when a message is received (14-day pilot uses Telegram; WhatsApp in Month 2 — see §5.4).
 - **Requirement:** Respond quickly; then process (sync or async). **Security:** Validate Telegram secret token in webhook to avoid spoofed requests — see §10.
 - **Input:** Telegram update: `message.from.id` (user ID), `message.chat.id` (chat ID for replies), `message.text`, `message.photo` (array; use file_id to download via getFile). For images, use Bot API `getFile` to download media.
 - **Logic:**
@@ -122,20 +122,20 @@
   - Optionally: `clarification_sent` (boolean, default false) — set true when we send the "clarifying question" after ESCALATE; used to know which row to escalate when the student later replies "escalate".
   - Optionally: `replied_at` (timestamptz, nullable) or `status` (e.g. `pending` | `replied` | `failed`) — if you process webhooks **async** (return 200 then process later), you need a way to find rows that were never replied to so you can retry or alert. Prefer setting `replied_at = now()` when the reply is successfully sent to the student (or when escalation message is sent to TA).
 - **Identifying students:** Store `student_telegram_id` (and optionally `student_name`) on every insert from the Telegram webhook. Then: "who queries the most?" = aggregate by `student_telegram_id`; "who did this escalation come from?" = read `student_telegram_id` (and `query_text`) from the same row. When notifying the TA, include "From: {student_telegram_id}" or "From: {student_name}" in the message.
-- **Emails:** `email_for_report` and `ta_telegram_id` (pilot) live on `institutes`; no separate emails table. For alerts (e.g. ALERT_EMAIL), keep a single address in env (e.g. Vercel); optional: add `alert_email` (text) to `institutes` if you want per-institute alert targets.
+- **Emails:** `email_for_report` and `ta_telegram_id` (pilot) live on `institutes`; no separate emails table. For alerts (e.g. ALERT_EMAIL), keep a single address in env (e.g. `ALERT_EMAIL`); optional: add `alert_email` (text) to `institutes` if you want per-institute alert targets.
 - **RLS:** Enable RLS; e.g. `FOR ALL USING (institute_id = 1)` for pilot so only institute 1 rows are visible when using non–service_role keys. Webhook and scripts use **service_role** and bypass RLS.
 - **Auto-generated `institute_id`:** Yes — use an `institutes` table with `id` as `SERIAL` or `IDENTITY`; each new institute gets the next id automatically. For pilot, insert one row and use that id (typically 1) everywhere.
 
 ---
 
-## 5. Pilot implementation (Vercel + scripts)
+## 5. Pilot implementation (n8n + scripts)
 
 - **Ingestion:** Run `scripts/ingest_pdf.py` with PDF path and institute slug. Script uses `extract_hybrid()` (from upsc-test-engine when available) → chunk → embed (`lib/embedding.py`) → Pinecone upsert (`namespace = institute_id`). On error, alert (e.g. ALERT_EMAIL).
-- **Telegram:** **Vercel** hosts `api/telegram_webhook.py`. Webhook verifies secret_token → parse update → if "escalate" + recent row with `clarification_sent = true` then escalate that row (Supabase update, reply to student, notify TA); else insert `query_logs` → embed query → Pinecone query (namespace = institute_id) → build prompt (Knowledge-lock §5.3) → Gemini generateContent (gemini-2.5-flash) → if ESCALATE then send clarifying question (`clarification_sent = true`); else if student asked to escalate then reply "We've escalated…" + Telegram to TA; else send answer to student.
-- **Weekly report:** Run `scripts/weekly_report.py`. Script reads Supabase (last 7 days, institute_id), computes keyword counts, top topics, escalation %, optional top students → outputs email body text; you send the email manually. "To:" from `institutes.email_for_report`.
+- **Telegram:** **n8n** hosts the Telegram webhook (`n8n-workflows/telegram-webhook.json`). Webhook verifies secret_token (optional) → parse update → if incoming text is "escalate" and there is a recent row for this student with `clarification_sent = true`, treat as escalate that row (Supabase update, reply to student, notify TA); else insert `query_logs` → embed query → Pinecone query (namespace = institute_id) → build prompt (Knowledge-lock §5.3) → Gemini generateContent (gemini-2.5-flash) → if ESCALATE then send clarifying question (`clarification_sent = true`); else if student asked to escalate then reply "We've escalated…" + get `ta_telegram_id` from `institutes` + Telegram to TA with full message; else send answer to student.
+- **Weekly report:** Run `scripts/weekly_report.py`. Script reads Supabase (last 7 days, institute_id), computes keyword counts, escalation %, top topics, optional top students → outputs email body text; you send the email manually. "To:" from `institutes.email_for_report`.
 - **Cleanup:** Run `scripts/cleanup_logs.py`. Deletes `query_logs` where `timestamp` < now − 30 days.
 
-Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion script and webhook).
+Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion script and n8n webhook).
 
 ---
 
@@ -154,7 +154,7 @@ Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion 
   1. Teacher sends you their PDFs via **Google Drive** or **WhatsApp**.
   2. You (founder) run a **script** to process and upload them to that institute's **Pinecone namespace** (extract → chunk → embed → upsert with `namespace = institute_id`).
   3. You provide the teacher with a **Telegram Bot link** (e.g. @MargAI_Success_Bot) to share with students.
-- **Scale (V2):** A simple **dashboard** where teachers drag-and-drop files; a **Vercel** (or similar) backend automatically triggers the embedding pipeline and upserts to the correct namespace.
+- **Scale (V2):** A simple **dashboard** where teachers drag-and-drop files; a backend (n8n or similar) automatically triggers the embedding pipeline and upserts to the correct namespace.
 
 ---
 
@@ -215,7 +215,7 @@ Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion 
 
 4. **Institute slug (resolved):** **Manual input field** for institute name/slug. **Uniqueness validation** (e.g. check Pinecone namespaces or Supabase slugs table) so no duplicate slug.
 
-5. **Alert email (resolved):** **Single address** in env (e.g. Vercel `ALERT_EMAIL`). Use for all error/alert emails.
+5. **Alert email (resolved):** **Single address** in env (e.g. `ALERT_EMAIL`). Use for all error/alert emails.
 
 6. **Topic keywords (resolved):** **Start with placeholders from online research** (JEE/NEET/UPSC). Refine later; see §3.3 for example terms.
 
@@ -226,7 +226,7 @@ Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion 
 ## 9. Phasing (3 steps)
 
 - **Phase 1 – Ingestion + storage:** Supabase schema; **manual upload** (or script from teacher's Drive/WhatsApp PDFs; see §5.2) → backend text+OCR → chunk → embed → Pinecone upsert (namespace = institute_id). Manual input: institute name/slug (uniqueness validation). No Telegram bot yet. Validate: uploaded PDF → Pinecone namespace with vectors.
-- **Phase 2 – Telegram + RAG (pilot):** Webhook (Vercel; verify secret_token): receive Telegram message → log to Supabase → Pinecone retrieval (namespace = institute_id) → Gemini (Knowledge-lock prompt §5.3) → reply or clarify → escalate (reply to student, then notify TA via Telegram from `institutes.ta_telegram_id`). Manual test with text and photo.
+- **Phase 2 – Telegram + RAG (pilot):** Webhook (n8n; verify secret_token): receive Telegram message → log to Supabase → Pinecone retrieval (namespace = institute_id) → Gemini (Knowledge-lock prompt §5.3) → reply or clarify → escalate (reply to student, then notify TA via Telegram from `institutes.ta_telegram_id`). Manual test with text and photo.
 - **Phase 3 – Reports + cleanup:** Weekly report script: **manual run** (`scripts/weekly_report.py`), generate insight report email text (you send email manually). Cleanup script: **manual run** (`scripts/cleanup_logs.py`) when you want to prune old logs. Error-handling emails.
 
 Once you confirm the open points above, this exploration is enough to implement the pilot step by step.
@@ -237,7 +237,7 @@ Once you confirm the open points above, this exploration is enough to implement 
 
 - **Security**
   - **Webhook spoofing:** The webhook URL is public; anyone could POST and inject fake `query_logs` or trigger flows. **Mitigation:** Verify Telegram webhook secret_token (validate before processing). For WhatsApp in Month 2, use provider signature verification (WATI/Interakt). Reject requests with invalid or missing signature.
-  - **Secrets:** Keep Supabase **service_role** key, Gemini API key, and Telegram bot token (pilot; WhatsApp credentials in Month 2) in Vercel env (or a secrets manager). Never commit them or log them.
+  - **Secrets:** Keep Supabase **service_role** key, Gemini API key, and Telegram bot token (pilot; WhatsApp credentials in Month 2) in env / n8n credentials (or a secrets manager). Never commit them or log them.
   - **PII:** `query_logs` contains PII (student_telegram_id, student_name, query_text). Restrict access (RLS, service_role only from webhook/scripts). Retention: 30-day cleanup is documented; ensure that matches your policy.
 
 - **Latency and timeouts**
@@ -257,5 +257,5 @@ Once you confirm the open points above, this exploration is enough to implement 
 - **What to watch out for (fallback mitigations — do not change the plan now)**  
   These are known risks to monitor. Keep the current plan as-is; treat the following as **fallback** options if issues show up. **Add logs where possible** to detect when they occur (not a hard requirement).
 
-  - **Cold start latency:** If the reply path runs on Vercel (or similar) serverless, functions can "sleep" when idle. For a student expecting an instant answer on Telegram, a 5+ second delay feels like a bug. **Fallback fix:** Use Vercel's **Edge** runtime where possible to reduce cold starts. **Logging:** Log request duration (e.g. time from webhook received to reply sent); alert or inspect when duration exceeds a threshold (e.g. 5s) to spot cold-start patterns.
+  - **Latency:** If the reply path runs on n8n (or similar), end-to-end time includes Supabase + Pinecone + Gemini. For a student expecting an instant answer on Telegram, a 5+ second delay feels like a bug. **Logging:** Log request duration (e.g. time from webhook received to reply sent); alert or inspect when duration exceeds a threshold (e.g. 5s) to spot slow patterns.
   - **Parsing messy PDFs:** The current plan uses text + OCR (e.g. pdfplumber, PyMuPDF, Tesseract). Coaching notes are often **tables, diagrams, or handwritten scans**; basic PDF parsers can fail or produce poor text. **Fallback fix:** Consider **LlamaParse** or **Unstructured.io** for better table/formula extraction if extraction quality becomes a problem. **Logging:** Log extraction outcomes per upload (e.g. total chars extracted, page count, per-page char counts, or extraction errors); low char counts or repeated failures can signal messy PDFs that need a better parser.

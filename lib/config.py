@@ -1,6 +1,6 @@
 """
 Environment config for MargAI Ghost Tutor pilot.
-Load from env; used by ingestion scripts and (via env) Vercel API.
+Load from env; used by ingestion scripts and (via env) any hosting / n8n runtime.
 Loads pilot/.env when present (so scripts work from repo root).
 """
 import os
@@ -15,7 +15,7 @@ _ENV_FILE = _PILOT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
-    """Settings from env (e.g. .env or Vercel env vars)."""
+    """Settings from env (e.g. .env or hosting / n8n env vars)."""
 
     # Supabase
     supabase_url: str = ""
