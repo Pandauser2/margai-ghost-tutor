@@ -158,6 +158,8 @@ Expected: script runs without error; `uploads` and Pinecone namespace `1` get da
 
 ## 7. Deploy webhook (Vercel)
 
+**New to Vercel?** Follow **[docs/VERCEL_STEP_BY_STEP.md](docs/VERCEL_STEP_BY_STEP.md)** for a full walkthrough (push to GitHub, redeploy, set Telegram webhook) with no prior deployment experience.
+
 **7.1** Install Vercel CLI and deploy from the **pilot** directory:
 
 ```bash
