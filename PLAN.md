@@ -2,6 +2,8 @@
 
 **Overall Progress:** `100%`
 
+Webhook now runs on **n8n** (no Vercel). Telegram bot points to n8n webhook URL.
+
 ---
 
 ## TLDR
@@ -18,7 +20,7 @@ Build a **14-day pilot** where students ask doubts over **Telegram** and get ans
 - **Clarify before escalate** — On ESCALATE or empty retrieval, send one clarifying message; only escalate when the student later replies “escalate” (or similar) or we get ESCALATE again on follow-up.
 - **Manual triggers only** — No cron: ingestion, weekly report, and log cleanup are all run manually (script or n8n “Run workflow”).
 - **Reuse extraction approach** — Same text+OCR logic as `upsc-test-engine` (pdfplumber, PyMuPDF, Tesseract); optional fallback later: LlamaParse/Unstructured.io if messy PDFs become a problem.
-- **Risks as fallback** — Cold start (Vercel) and messy PDF parsing are documented; do not change the plan now; add logs where possible to detect them.
+- **Risks as fallback** — n8n webhook latency and messy PDF parsing are documented; do not change the plan now; add logs where possible to detect them.
 
 ---
 
@@ -42,7 +44,7 @@ Build a **14-day pilot** where students ask doubts over **Telegram** and get ans
   - [x] 🟩 Manual input: institute slug/name with uniqueness check. On failure, email ALERT_EMAIL.
 
 - [x] 🟩 **Step 4: Telegram webhook and chat → institute mapping (Phase 2)**
-  - [x] 🟩 **Build and host the Telegram webhook on Vercel** (or chosen runtime): register bot, set webhook URL, validate secret_token on incoming requests.
+  - [x] 🟩 **Build and host the Telegram webhook on n8n**: register bot, set webhook URL to n8n, validate secret_token on incoming requests.
   - [x] 🟩 **Map incoming `chat_id` (or bot context) to `institute_id` in Supabase** so the handler knows which Pinecone namespace to query. For pilot: single bot → single institute (e.g. hardcode `institute_id = 1` or read from config). For multi-tenant later: use a Supabase lookup (e.g. table mapping chat_id/bot to institute_id, or `institutes` row per bot).
   - [x] 🟩 On message: parse `message.from.id`, `message.chat.id`, `message.text`, `message.photo`; resolve `institute_id` via the mapping above before inserting into `query_logs` and querying Pinecone.
 
@@ -58,7 +60,7 @@ Build a **14-day pilot** where students ask doubts over **Telegram** and get ans
   - [x] 🟩 Cleanup: manual trigger; delete from `query_logs` where `timestamp` < now − 30 days.
 
 - [x] 🟩 **Step 7: Observability (optional, not blocking)**
-  - [x] 🟩 Where possible, log request duration (webhook received → reply sent) to detect cold-start latency (fallback: Vercel Edge).
+  - [x] 🟩 Where possible, log request duration (webhook received → reply sent) to detect latency (n8n).
   - [x] 🟩 Where possible, log per-upload extraction outcome (e.g. total chars, page count, errors) to detect messy PDFs (fallback: LlamaParse/Unstructured.io).
 
 ---

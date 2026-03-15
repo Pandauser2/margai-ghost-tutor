@@ -1,11 +1,6 @@
 # MargAI Ghost Tutor – 14-day pilot
 
-## Vercel Git Sync Fix
-If dashboard shows old code:
-1. git push
-2. Click "Redeploy" button (top right) or Deployments → Redeploy latest commit
-
----
+Webhook now runs on **n8n** (no Vercel). Telegram bot points to n8n webhook URL.
 
 RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→escalate to TA. Multi-tenant via Pinecone namespaces (`institute_id`).
 
@@ -23,7 +18,7 @@ RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→
    Copy `.env.example` to `.env` and set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` (optional).
 
 4. **Telegram webhook**  
-   Deploy to Vercel (`vercel` from project root). Set webhook URL to `https://<your-domain>/api/telegram_webhook` and optional `secret_token` via BotFather / setWebhook.
+   Run the webhook workflow in n8n. Set Telegram webhook URL to your n8n webhook URL and optional `secret_token` via BotFather / setWebhook.
 
 ## Usage
 
@@ -47,12 +42,12 @@ RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→
   Verifies extraction and chunking only.
 
 - **Full ingest:**  
-  Install deps (`pip install -r margai-ghost-tutor-pilot/requirements.txt`), set `.env`, then from repo root:  
+  Install deps for scripts (see `scripts/` and `lib/`), set `.env`, then from repo root:  
   `python margai-ghost-tutor-pilot/scripts/ingest_pdf.py manual-qc-pdfs/small_test_upsc.pdf test-institute`
 
 ## Observability
 
-- **Webhook:** Logs `request_duration_seconds` (webhook received → reply sent) to spot cold-start latency.
+- **Webhook (n8n):** Log request duration (webhook received → reply sent) where n8n supports it.
 - **Ingestion:** Logs extraction outcome (`total_chars`, `page_count`, `is_valid`) per upload to spot messy PDFs.
 
 See `EXPLORATION.md` and `PLAN.md` for full design and task list.
