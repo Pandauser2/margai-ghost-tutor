@@ -1,5 +1,12 @@
 # MargAI Ghost Tutor – 14-day pilot
 
+## Vercel Git Sync Fix
+If dashboard shows old code:
+1. git push
+2. Click "Redeploy" button (top right) or Deployments → Redeploy latest commit
+
+---
+
 RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→escalate to TA. Multi-tenant via Pinecone namespaces (`institute_id`).
 
 **→ Step-by-step run guide (bash commands): [RUN.md](RUN.md)**
