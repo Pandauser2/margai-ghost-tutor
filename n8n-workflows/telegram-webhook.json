@@ -49,8 +49,8 @@
       "typeVersion": 1,
       "position": [440, 0],
       "parameters": {
-        "operation": "insert",
-        "tableId": "public.query_logs",
+        "operation": "Insert",
+        "tableId": "query_logs",
         "dataMode": "defineBelow",
         "fieldsUi": {
           "fieldValues": [
