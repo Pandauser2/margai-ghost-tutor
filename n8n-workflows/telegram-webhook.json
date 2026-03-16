@@ -50,7 +50,7 @@
       "position": [440, 0],
       "parameters": {
         "operation": "insert",
-        "tableId": "query_logs",
+        "tableId": "public.query_logs",
         "dataMode": "defineBelow",
         "fieldsUi": {
           "fieldValues": [
@@ -174,7 +174,7 @@
       "position": [2420, -100],
       "parameters": {
         "operation": "update",
-        "tableId": "query_logs",
+        "tableId": "public.query_logs",
         "filterType": "manual",
         "matchFields": "id",
         "matchFieldValue": "={{ $('Supabase Insert query_logs').item.json.id }}",
