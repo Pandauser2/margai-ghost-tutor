@@ -11,7 +11,7 @@
       "parameters": {
         "path": "webhook",
         "httpMethod": "POST",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
         "responseCode": 200,
         "options": {
           "rawBody": false
