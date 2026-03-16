@@ -208,7 +208,7 @@
       "position": [2640, 0],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={ \"ok\": true }",
+        "responseBody": "={ \"status\": \"ok\" }",
         "options": { "responseCode": 200 }
       }
     },
