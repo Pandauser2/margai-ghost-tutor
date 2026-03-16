@@ -6,9 +6,26 @@ Copy-paste bash commands and minimal manual steps. Assumes you're in the **monor
 
 ## 1. Prerequisites
 
-- Python 3.10+
-- Accounts: Supabase, Pinecone, Google AI (Gemini), Telegram Bot
-- Access to an **n8n** instance (cloud or self‑hosted) where you can import the workflow JSON
+- **Python 3.10+**  
+  So you can run the small helper scripts (PDF ingest, weekly report, cleanup).
+
+- **Online accounts** (you can sign up with email / Google):  
+  - **Supabase** – where we store institutes, uploads, and student questions.  
+  - **Pinecone** – where we store the embeddings (vector database).  
+  - **Google AI (Gemini)** – the LLM + embedding API.  
+  - **Telegram Bot** – created via [@BotFather](https://t.me/BotFather).
+
+- **An n8n workspace** (this is where the Telegram webhook lives)  
+  If you are not from a software background, think of n8n as a visual “flow builder” on the web. You have two easy options:
+  - **Option A – n8n Cloud (recommended):**  
+    1. Go to `https://n8n.io` in your browser.  
+    2. Click **Sign up** and create a free account / trial.  
+    3. After signup, n8n gives you a personal URL like `https://your-name.n8n.cloud`.  
+    4. This is the address where your Telegram bot will send messages.
+  - **Option B – Self‑host (only if you’re comfortable with servers/Docker):**  
+    Run n8n on your own machine or server and use that URL instead. If you don’t know what this means, just use **Option A**.
+
+Once you have an n8n URL, you will later **import** the ready‑made workflow file (`n8n-workflows/telegram-webhook.json`) into n8n and copy its **Webhook URL** into Telegram. The steps for that are in section 7.
 
 ---
 
