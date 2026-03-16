@@ -49,7 +49,7 @@
       "typeVersion": 1,
       "position": [440, 0],
       "parameters": {
-        "operation": "Insert",
+        "operation": "insert",
         "tableId": "query_logs",
         "dataMode": "defineBelow",
         "fieldsUi": {
