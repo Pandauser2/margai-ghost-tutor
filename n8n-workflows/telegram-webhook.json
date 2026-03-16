@@ -294,6 +294,11 @@
       "main": [
         [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
       ]
+    },
+    "Email ALERT_EMAIL on failure": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
     }
   },
   "settings": {
