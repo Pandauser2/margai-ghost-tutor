@@ -118,25 +118,28 @@
       "typeVersion": 1,
       "position": [1540, 0],
       "parameters": {
+        "mode": "getMany",
         "indexName": "={{ $env.PINECONE_INDEX_NAME }}",
         "namespace": "1",
-        "options": { "topK": 8 }
+        "options": { "topK": 8 },
+        "getManyLimit": 8,
+        "prompt": "={{ $json.query_text || '' }}"
       },
       "credentials": { "pineconeApi": { "name": "Pinecone API" } }
     },
     {
-      "id": "gemini-chat",
-      "name": "Gemini Chat (gemini-2.5-flash)",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
+      "id": "gemini-http",
+      "name": "Gemini generateContent (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [1760, 0],
       "parameters": {
-        "model": "gemini-2.5-flash",
-        "options": {
-          "systemMessage": "You are an assistant for the institute. Use ONLY the provided context to answer. If the answer is not in the context, do not make it up. If context doesn't answer or you are unsure, respond with exactly: ESCALATE. Allow general logic to explain steps; never introduce new facts not in the context."
-        }
-      },
-      "credentials": { "googleGeminiApi": { "name": "Google Gemini API" } }
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are an assistant for the institute. Use ONLY the provided context to answer. If the answer is not in the context, do not make it up. If context doesn\\'t answer or you are unsure, respond with exactly: ESCALATE. Allow general logic to explain steps; never introduce new facts not in the context.\\n\\nContext:\\n' + (($json.matches && Array.isArray($json.matches)) ? $json.matches.map(m => (m.metadata && m.metadata.text) || m.text || '').join('\\n') : ($json.text || $json.pageContent || '')) + '\\n\\nQuestion: ' + ($json.query_text || $('Set institute_id and parse').first().json.query_text || '') }] }] }) }}"
+      }
     },
     {
       "id": "if-escalate",
@@ -147,7 +150,7 @@
       "parameters": {
         "conditions": {
           "conditions": [
-            { "leftValue": "={{ $json.text.trim().toUpperCase() }}", "rightValue": "ESCALATE", "operator": { "type": "string", "operation": "equals" } }
+            { "leftValue": "={{ ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0]) ? $json.candidates[0].content.parts[0].text.trim().toUpperCase() : '' }}", "rightValue": "ESCALATE", "operator": { "type": "string", "operation": "equals" } }
           ],
           "combinator": "and"
         }
@@ -196,7 +199,7 @@
       "parameters": {
         "operation": "sendMessage",
         "chatId": "={{ $('Webhook').first().json.body.message.chat.id }}",
-        "text": "={{ $json.text }}"
+        "text": "={{ $json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] ? $json.candidates[0].content.parts[0].text : $json.text }}"
       },
       "credentials": { "telegramApi": { "name": "Telegram API" } }
     },
@@ -269,10 +272,10 @@
     },
     "Pinecone query": {
       "main": [
-        [{ "node": "Gemini Chat (gemini-2.5-flash)", "type": "main", "index": 0 }]
+        [{ "node": "Gemini generateContent (HTTP)", "type": "main", "index": 0 }]
       ]
     },
-    "Gemini Chat (gemini-2.5-flash)": {
+    "Gemini generateContent (HTTP)": {
       "main": [
         [{ "node": "IF response == ESCALATE", "type": "main", "index": 0 }]
       ]
