@@ -49,17 +49,18 @@
       "typeVersion": 1,
       "position": [440, 0],
       "parameters": {
-        "operation": "Create",
+        "resource": "row",
+        "operation": "create",
         "tableId": "query_logs",
-        "dataMode": "defineBelow",
+        "dataToSend": "defineBelow",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "institute_id", "fieldValue": "={{ $json.institute_id ?? 1 }}" },
+            { "fieldId": "institute_id", "fieldValue": "={{ $json.institute_id }}" },
             { "fieldId": "student_telegram_id", "fieldValue": "={{ $json.student_telegram_id }}" },
             { "fieldId": "student_name", "fieldValue": "={{ $json.student_name }}" },
             { "fieldId": "query_text", "fieldValue": "={{ $json.query_text }}" },
             { "fieldId": "is_photo", "fieldValue": "={{ $json.is_photo }}" },
-            { "fieldId": "escalated", "fieldValue": false }
+            { "fieldId": "escalated", "fieldValue": "={{ false }}" }
           ]
         }
       },
@@ -103,6 +104,25 @@
       "parameters": { "mode": "append", "options": {} }
     },
     {
+      "id": "if-query-text",
+      "name": "IF query_text present",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1220, 0],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ !!($json.query_text && $json.query_text.trim()) }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
       "id": "embed-query",
       "name": "Embed query (Gemini)",
       "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
@@ -112,34 +132,70 @@
       "credentials": { "googleGeminiApi": { "name": "Google Gemini API" } }
     },
     {
+      "id": "qa-chain",
+      "name": "Question and Answer Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainRetrievalQa",
+      "typeVersion": 1.3,
+      "position": [1440, 0],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.query_text || '' }}"
+      }
+    },
+    {
+      "id": "vector-store-retriever",
+      "name": "Vector Store Retriever",
+      "type": "@n8n/n8n-nodes-langchain.retrieverVectorStore",
+      "typeVersion": 1,
+      "position": [1540, 200],
+      "parameters": { "topK": 8 }
+    },
+    {
       "id": "pinecone-query",
       "name": "Pinecone query",
       "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
       "typeVersion": 1,
-      "position": [1540, 0],
+      "position": [1540, 400],
       "parameters": {
-        "mode": "getMany",
+        "mode": "retrieve",
         "indexName": "={{ $env.PINECONE_INDEX_NAME }}",
-        "namespace": "1",
-        "options": { "topK": 8 },
-        "getManyLimit": 8,
-        "prompt": "={{ $json.query_text || '' }}"
+        "options": { "pineconeNamespace": "={{ $json.institute_id }}" }
       },
       "credentials": { "pineconeApi": { "name": "Pinecone API" } }
     },
     {
-      "id": "gemini-http",
-      "name": "Gemini generateContent (HTTP)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "set-normalized-answer",
+      "name": "Set normalized answer text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [1760, 0],
       "parameters": {
-        "method": "POST",
-        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={{ $env.GEMINI_API_KEY }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are an assistant for the institute. Use ONLY the provided context to answer. If the answer is not in the context, do not make it up. If context doesn\\'t answer or you are unsure, respond with exactly: ESCALATE. Allow general logic to explain steps; never introduce new facts not in the context.\\n\\nContext:\\n' + (($json.matches && Array.isArray($json.matches)) ? $json.matches.map(m => (m.metadata && m.metadata.text) || m.text || '').join('\\n') : ($json.text || $json.pageContent || '')) + '\\n\\nQuestion: ' + ($json.query_text || $('Set institute_id and parse').first().json.query_text || '') }] }] }) }}"
+        "assignments": {
+          "assignments": [
+            {
+              "id": "text",
+              "name": "text",
+              "value": "={{ $json.response?.text ?? $json.text ?? 'ESCALATE' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
       }
+    },
+    {
+      "id": "gemini-chat",
+      "name": "Gemini Chat (gemini-2.5-flash)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1760, -200],
+      "parameters": {
+        "model": "gemini-2.5-flash",
+        "options": {
+          "systemMessage": "You are an assistant for the institute. Use ONLY the provided context to answer. If the answer is not in the context, do not make it up. If context doesn't answer or you are unsure, respond with exactly: ESCALATE. Allow general logic to explain steps; never introduce new facts not in the context."
+        }
+      },
+      "credentials": { "googleGeminiApi": { "name": "Google Gemini API" } }
     },
     {
       "id": "if-escalate",
@@ -150,7 +206,7 @@
       "parameters": {
         "conditions": {
           "conditions": [
-            { "leftValue": "={{ ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0]) ? $json.candidates[0].content.parts[0].text.trim().toUpperCase() : '' }}", "rightValue": "ESCALATE", "operator": { "type": "string", "operation": "equals" } }
+            { "leftValue": "={{ $json.text.trim().toUpperCase() }}", "rightValue": "ESCALATE", "operator": { "type": "string", "operation": "equals" } }
           ],
           "combinator": "and"
         }
@@ -176,12 +232,21 @@
       "typeVersion": 1,
       "position": [2420, -100],
       "parameters": {
+        "resource": "row",
         "operation": "update",
         "tableId": "public.query_logs",
         "filterType": "manual",
-        "matchFields": "id",
-        "matchFieldValue": "={{ $('Supabase Insert query_logs').item.json.id }}",
-        "dataMode": "defineBelow",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Supabase Insert query_logs').item.json.id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
         "fieldsUi": {
           "fieldValues": [
             { "fieldId": "clarification_sent", "fieldValue": true }
@@ -199,9 +264,29 @@
       "parameters": {
         "operation": "sendMessage",
         "chatId": "={{ $('Webhook').first().json.body.message.chat.id }}",
-        "text": "={{ $json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] ? $json.candidates[0].content.parts[0].text : $json.text }}"
+        "text": "={{ $json.text }}"
       },
       "credentials": { "telegramApi": { "name": "Telegram API" } }
+    },
+    {
+      "id": "set-missing-query",
+      "name": "Set missing query_text message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1440, 200],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "text",
+              "name": "text",
+              "value": "I couldn't read your question. Please send your doubt as text (or as a photo with a caption) so I can look it up in your study material.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
     },
     {
       "id": "respond-200",
@@ -259,25 +344,43 @@
     },
     "Merge for embed": {
       "main": [
-        [{ "node": "Embed query (Gemini)", "type": "main", "index": 0 }]
+        [{ "node": "IF query_text present", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF query_text present": {
+      "main": [
+        [{ "node": "Question and Answer Chain", "type": "main", "index": 0 }],
+        [{ "node": "Set missing query_text message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Question and Answer Chain": {
+      "main": [
+        [{ "node": "Set normalized answer text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set normalized answer text": {
+      "main": [
+        [{ "node": "IF response == ESCALATE", "type": "main", "index": 0 }]
       ]
     },
     "Embed query (Gemini)": {
-      "main": [
-        [{ "node": "Pinecone query", "type": "main", "index": 0 }]
-      ],
       "ai_embedding": [
         [{ "node": "Pinecone query", "type": "ai_embedding", "index": 0 }]
       ]
     },
-    "Pinecone query": {
-      "main": [
-        [{ "node": "Gemini generateContent (HTTP)", "type": "main", "index": 0 }]
+    "Vector Store Retriever": {
+      "ai_retriever": [
+        [{ "node": "Question and Answer Chain", "type": "ai_retriever", "index": 0 }]
       ]
     },
-    "Gemini generateContent (HTTP)": {
-      "main": [
-        [{ "node": "IF response == ESCALATE", "type": "main", "index": 0 }]
+    "Pinecone query": {
+      "ai_vectorStore": [
+        [{ "node": "Vector Store Retriever", "type": "ai_vectorStore", "index": 0 }]
+      ]
+    },
+    "Gemini Chat (gemini-2.5-flash)": {
+      "ai_languageModel": [
+        [{ "node": "Question and Answer Chain", "type": "ai_languageModel", "index": 0 }]
       ]
     },
     "IF response == ESCALATE": {
@@ -299,6 +402,11 @@
     "Telegram reply with answer": {
       "main": [
         [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set missing query_text message": {
+      "main": [
+        [{ "node": "Telegram reply with answer", "type": "main", "index": 0 }]
       ]
     },
     "Email ALERT_EMAIL on failure": {
