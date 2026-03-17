@@ -262,6 +262,9 @@
     "Embed query (Gemini)": {
       "main": [
         [{ "node": "Pinecone query", "type": "main", "index": 0 }]
+      ],
+      "ai_embedding": [
+        [{ "node": "Pinecone query", "type": "ai_embedding", "index": 0 }]
       ]
     },
     "Pinecone query": {
