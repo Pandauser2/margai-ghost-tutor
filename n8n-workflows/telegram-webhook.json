@@ -32,7 +32,7 @@
             { "id": "institute_id", "name": "institute_id", "value": 1, "type": "number" },
             { "id": "student_telegram_id", "name": "student_telegram_id", "value": "={{ $json.body.message.from.id }}", "type": "string" },
             { "id": "student_name", "name": "student_name", "value": "={{ $json.body.message.from.first_name || '' }}", "type": "string" },
-            { "id": "query_text", "name": "query_text", "value": "={{ $json.body.message.text || '' }}", "type": "string" },
+            { "id": "query_text", "name": "query_text", "value": "={{ $json.body.message.text || $json.body.message.caption || '' }}", "type": "string" },
             { "id": "is_photo", "name": "is_photo", "value": "={{ !!$json.body.message.photo }}", "type": "boolean" },
             { "id": "chat_id", "name": "chat_id", "value": "={{ $json.body.message.chat.id }}", "type": "number" },
             { "id": "photo_file_id", "name": "photo_file_id", "value": "={{ $json.body.message.photo && $json.body.message.photo.slice(-1)[0].file_id }}", "type": "string" },
@@ -49,12 +49,12 @@
       "typeVersion": 1,
       "position": [440, 0],
       "parameters": {
-        "operation": "insert",
+        "operation": "Create",
         "tableId": "query_logs",
         "dataMode": "defineBelow",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "institute_id", "fieldValue": "={{ $json.institute_id }}" },
+            { "fieldId": "institute_id", "fieldValue": "={{ $json.institute_id ?? 1 }}" },
             { "fieldId": "student_telegram_id", "fieldValue": "={{ $json.student_telegram_id }}" },
             { "fieldId": "student_name", "fieldValue": "={{ $json.student_name }}" },
             { "fieldId": "query_text", "fieldValue": "={{ $json.query_text }}" },
@@ -100,7 +100,7 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [1100, 0],
-      "parameters": { "mode": "combine", "mergeByFields": { "values": [] }, "options": {} }
+      "parameters": { "mode": "append", "options": {} }
     },
     {
       "id": "embed-query",
@@ -161,7 +161,7 @@
       "position": [2200, -100],
       "parameters": {
         "operation": "sendMessage",
-        "chatId": "={{ $('Set institute_id and parse').item.json.chat_id }}",
+        "chatId": "={{ $('Webhook').first().json.body.message.chat.id }}",
         "text": "I couldn't find a clear answer in your study material. Could you add a bit more detail (e.g. chapter or topic) or rephrase? If you'd prefer to send this to your TA, reply with **escalate**."
       },
       "credentials": { "telegramApi": { "name": "Telegram API" } }
@@ -195,7 +195,7 @@
       "position": [2200, 100],
       "parameters": {
         "operation": "sendMessage",
-        "chatId": "={{ $('Set institute_id and parse').item.json.chat_id }}",
+        "chatId": "={{ $('Webhook').first().json.body.message.chat.id }}",
         "text": "={{ $json.text }}"
       },
       "credentials": { "telegramApi": { "name": "Telegram API" } }
