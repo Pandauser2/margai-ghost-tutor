@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Pinecone
     pinecone_api_key: str = ""
-    pinecone_index_name: str = "margai-ghost-tutor"
+    pinecone_index_name: str = "margai-ghost-tutor-v2"
 
     # Gemini
     gemini_api_key: str = ""

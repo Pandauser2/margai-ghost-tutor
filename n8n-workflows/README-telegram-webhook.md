@@ -12,8 +12,8 @@ Implements PLAN.md Step 4 + 5: receive Telegram updates → log to Supabase → 
 4. **Supabase Insert query_logs** – Insert row (institute_id, student_telegram_id, student_name, query_text, is_photo, escalated=false).
 5. **IF photo** – True → HTTP Request Telegram `getFile`, then merge with context. False → continue.
 6. **Merge** – Combine branches so one item has `query_text` (and optional file_path).
-7. **Embed query (Gemini)** – Gemini embedding-001, 768 dim (or HTTP Request to embedding API).
-8. **Pinecone query** – Namespace `"1"`, top_k=8 (or HTTP Request to Pinecone query API).
+7. **Embed query (Gemini)** – Model `gemini-embedding-001` (dimension 3072; must match Pinecone index).
+8. **Pinecone query** – Index from `PINECONE_INDEX_NAME` (e.g. `margai-ghost-tutor-v2`), namespace from `institute_id`, top_k=8.
 9. **Gemini Chat** – gemini-2.5-flash; system prompt: answer only from context; if unsure reply exactly ESCALATE; multimodal if photo.
 10. **IF response == ESCALATE** – Normalize response (trim, uppercase); equals "ESCALATE".
     - **True** → Telegram send clarifying message → Supabase update that row `clarification_sent=true` → Respond to Webhook 200.
@@ -64,3 +64,10 @@ Implements PLAN.md Step 4 + 5: receive Telegram updates → log to Supabase → 
 
 5. **Check Supabase**
    - `query_logs` has new rows; after clarify, `clarification_sent = true`; after escalate, `escalated = true`.
+
+### Validation (after implementation)
+
+- **Confirm Pinecone returns matches (length > 0):** For a query that should hit ingested content, the retriever/Pinecone step should return at least one match.
+- **Confirm matches contain `metadata.text`:** Retriever output (or chain context) should have each match with `metadata.text` containing chunk content.
+- **Confirm QA chain returns non-empty answer:** For a question covered by the ingested PDF, the chain output should be non-empty (and not only "ESCALATE" when context is present).
+- **Confirm no dimension mismatch errors:** No "Vector dimension X does not match index dimension Y" in n8n or ingestion logs.

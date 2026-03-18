@@ -74,8 +74,8 @@ import os
 key = os.environ.get('PINECONE_API_KEY') or input('PINECONE_API_KEY: ')
 pc = Pinecone(api_key=key)
 pc.create_index(
-    name='margai-ghost-tutor',
-    dimension=768,
+    name='margai-ghost-tutor-v2',
+    dimension=3072,
     metric='cosine',
     spec=ServerlessSpec(cloud='aws', region='us-east-1'),
 )
@@ -83,7 +83,7 @@ print('Index created.')
 "
 ```
 
-Or create it in the Pinecone dashboard: dimension **768**, metric **cosine**, serverless.
+Or create it in the Pinecone dashboard: dimension **3072**, metric **cosine**, serverless. Use index name **margai-ghost-tutor-v2** (do not reuse the old index name).
 
 ---
 
@@ -117,7 +117,7 @@ If `.env` already exists, skip the copy and just edit it to add or update keys.
 | `SUPABASE_URL` | Supabase → Project Settings → API → Project URL | `https://abcdefgh.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` (secret) | `eyJhbGciOiJIUzI1NiIs...` |
 | `PINECONE_API_KEY` | Pinecone console → API Keys | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
-| `PINECONE_INDEX_NAME` | Name you gave the index | `margai-ghost-tutor` |
+| `PINECONE_INDEX_NAME` | Name you gave the index | `margai-ghost-tutor-v2` |
 | `GEMINI_API_KEY` | Google AI Studio / API key for Gemini | `AIza...` |
 | `TELEGRAM_BOT_TOKEN` | BotFather “token to access HTTP API” | `7123456789:AAH...` |
 | `TELEGRAM_WEBHOOK_SECRET` | Optional; from `openssl rand -hex 32` or leave empty | `` or `a1b2c3...` |
@@ -129,7 +129,7 @@ Example `.env` (with fake values):
 SUPABASE_URL=https://abcdefgh.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 PINECONE_API_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-PINECONE_INDEX_NAME=margai-ghost-tutor
+PINECONE_INDEX_NAME=margai-ghost-tutor-v2
 GEMINI_API_KEY=AIzaSy...
 TELEGRAM_BOT_TOKEN=7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TELEGRAM_WEBHOOK_SECRET=
@@ -244,7 +244,7 @@ Current behavior: if no mapping is found, `institute_id = INSTITUTE_ID_DEFAULT`.
 |------|-------------------|
 | Schema | Run `001_initial_schema.sql` in Supabase SQL Editor |
 | Institute | `INSERT INTO institutes ...` (id=1, slug=test-institute) |
-| Pinecone | Create index dimension 768, name `margai-ghost-tutor` |
+| Pinecone | Create index dimension 3072, name `margai-ghost-tutor-v2` |
 | Env | `cp .env.example .env` and fill in keys |
 | Deps | Create venv + `pip install` deps from §5.2 |
 | Local test | `python3 margai-ghost-tutor-pilot/scripts/test_ingest_local.py manual-qc-pdfs/small_test_upsc.pdf test-institute` |

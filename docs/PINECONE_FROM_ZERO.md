@@ -15,7 +15,7 @@ This app uses **Pinecone** as a “vector database”: it stores **embeddings** 
    This is your **PINECONE_API_KEY**. Put it in `margai-ghost-tutor-pilot/.env` as:
    ```env
    PINECONE_API_KEY=your-copied-key-here
-   PINECONE_INDEX_NAME=margai-ghost-tutor
+   PINECONE_INDEX_NAME=margai-ghost-tutor-v2
    ```
 
 You’ll use this key in the app and (optionally) when creating the index with Python. You do **not** need to understand what an “embedding” or “vector” is to continue.
@@ -24,8 +24,8 @@ You’ll use this key in the app and (optionally) when creating the index with P
 
 ## 2. Create the index (two options)
 
-You need **one index** named `margai-ghost-tutor` with:
-- **Dimension:** 768  
+You need **one index** named `margai-ghost-tutor-v2` with:
+- **Dimension:** 3072  
 - **Metric:** cosine  
 - **Type:** serverless  
 
@@ -38,15 +38,15 @@ Choose **A** (dashboard) or **B** (Python). Dashboard is easier if you’re new.
 1. In the Pinecone console, go to **Indexes** (left sidebar).
 2. Click **Create Index** (or **+ Create index**).
 3. Fill in:
-   - **Index name:** `margai-ghost-tutor` (must match `PINECONE_INDEX_NAME` in `.env`).
-   - **Dimensions:** `768`.
+   - **Index name:** `margai-ghost-tutor-v2` (must match `PINECONE_INDEX_NAME` in `.env`).
+   - **Dimensions:** `3072`.
    - **Metric:** **Cosine**.
    - **Cloud / Region:** pick a serverless option (e.g. **AWS** and a region like **us-east-1**).  
      The UI might say “Serverless” or “Starter” plan—choose that so you don’t need to manage a server.
 4. Click **Create** (or **Create index**).
 5. Wait until the index status is **Ready** (may take a minute or two).
 
-You’re done. Skip Option B. Your `.env` already has `PINECONE_INDEX_NAME=margai-ghost-tutor`; the app will use this index.
+You’re done. Skip Option B. Your `.env` already has `PINECONE_INDEX_NAME=margai-ghost-tutor-v2`; the app will use this index.
 
 ---
 
@@ -71,21 +71,21 @@ Use this only if you prefer the command line or the dashboard didn’t work.
        exit(1)
    pc = Pinecone(api_key=key)
    pc.create_index(
-       name='margai-ghost-tutor',
-       dimension=768,
+       name='margai-ghost-tutor-v2',
+       dimension=3072,
        metric='cosine',
        spec=ServerlessSpec(cloud='aws', region='us-east-1'),
    )
    print('Index created. Wait 1–2 min until it shows Ready in the console.')
    "
    ```
-3. In the Pinecone console, open **Indexes** and confirm `margai-ghost-tutor` appears and becomes **Ready**.
+3. In the Pinecone console, open **Indexes** and confirm `margai-ghost-tutor-v2` appears and becomes **Ready**.
 
 ---
 
-## 3. Why 768 and cosine?
+## 3. Why 3072 and cosine?
 
-- **Dimension 768:** The embedding model (Gemini) used by this app produces vectors of length 768. The index must use the same dimension.
+- **Dimension 3072:** The embedding model (Gemini `gemini-embedding-001`) used by this app produces vectors of length 3072. The index must use the same dimension.
 - **Metric cosine:** The app finds “nearest” chunks by cosine similarity. The index must use the cosine metric to match.
 
 You don’t need to change these unless you change the embedding model in the code.
@@ -96,8 +96,8 @@ You don’t need to change these unless you change the embedding model in the co
 
 - [ ] Pinecone account created.
 - [ ] API key created and copied.
-- [ ] `PINECONE_API_KEY` and `PINECONE_INDEX_NAME=margai-ghost-tutor` set in `margai-ghost-tutor-pilot/.env`.
-- [ ] Index `margai-ghost-tutor` created (dashboard or Python) with dimension **768**, metric **cosine**, serverless.
+- [ ] `PINECONE_API_KEY` and `PINECONE_INDEX_NAME=margai-ghost-tutor-v2` set in `margai-ghost-tutor-pilot/.env`.
+- [ ] Index `margai-ghost-tutor-v2` created (dashboard or Python) with dimension **3072**, metric **cosine**, serverless.
 - [ ] Index status is **Ready** in the Pinecone console.
 
 Then continue with **Step 4 (Telegram bot)** in [RUN.md](../RUN.md).

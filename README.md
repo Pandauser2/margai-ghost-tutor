@@ -12,7 +12,7 @@ RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→
    Run `supabase/migrations/001_initial_schema.sql` in the SQL Editor (or `supabase db push`). Insert at least one row in `institutes` (e.g. `slug`, `email_for_report`, `ta_telegram_id`).
 
 2. **Pinecone**  
-   Create a serverless index (dimension 768). See `docs/PINECONE_NAMESPACE.md` for namespace convention.
+   Create a serverless index (dimension 3072, name `margai-ghost-tutor-v2`). See `docs/PINECONE_NAMESPACE.md` for namespace convention.
 
 3. **Env**  
    Copy `.env.example` to `.env` and set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` (optional).

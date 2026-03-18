@@ -152,7 +152,7 @@ def main() -> None:
             sb.table("uploads").update({"status": "failed", "error_message": "PINECONE_API_KEY not set"}).eq("id", upload_id).execute()
             sys.exit(1)
 
-        index = get_pinecone_index(pc_key, settings.pinecone_index_name or os.environ.get("PINECONE_INDEX_NAME", "margai-ghost-tutor"))
+        index = get_pinecone_index(pc_key, settings.pinecone_index_name or os.environ.get("PINECONE_INDEX_NAME", "margai-ghost-tutor-v2"))
         upsert_vectors(index, vectors, namespace=str(institute_id))
 
         sb.table("uploads").update({

@@ -128,7 +128,7 @@
       "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
       "typeVersion": 1,
       "position": [1320, 0],
-      "parameters": { "model": "embedding-001", "dimensions": 768 },
+      "parameters": { "model": "gemini-embedding-001", "dimensions": 3072 },
       "credentials": { "googleGeminiApi": { "name": "Google Gemini API" } }
     },
     {
@@ -159,7 +159,7 @@
       "parameters": {
         "mode": "retrieve",
         "indexName": "={{ $env.PINECONE_INDEX_NAME }}",
-        "options": { "pineconeNamespace": "={{ $json.institute_id }}" }
+        "options": { "pineconeNamespace": "={{ String($json.institute_id) }}" }
       },
       "credentials": { "pineconeApi": { "name": "Pinecone API" } }
     },

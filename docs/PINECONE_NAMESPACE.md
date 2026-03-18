@@ -2,7 +2,7 @@
 
 ## Index
 
-- Create a **serverless** index in Pinecone with dimension matching the embedding model (e.g. **768** for `text-embedding-004` or `gemini-embedding-001`).
+- Create a **serverless** index in Pinecone with dimension matching the embedding model (e.g. **3072** for `gemini-embedding-001`). Use index name **`margai-ghost-tutor-v2`** (do not reuse the old index name).
 - Metric: cosine (default for semantic search).
 
 ## Namespace convention
@@ -29,8 +29,8 @@ Via Pinecone console, or API:
 from pinecone import Pinecone, ServerlessSpec
 pc = Pinecone(api_key="...")
 pc.create_index(
-    name="margai-ghost-tutor",
-    dimension=768,
+    name="margai-ghost-tutor-v2",
+    dimension=3072,
     metric="cosine",
     spec=ServerlessSpec(cloud="aws", region="us-east-1"),
 )

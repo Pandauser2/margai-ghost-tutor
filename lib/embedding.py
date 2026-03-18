@@ -1,6 +1,6 @@
 """
-Gemini embedding API: one vector per chunk; dimension 768 for Pinecone index.
-Uses models/gemini-embedding-001 with output_dimensionality=768.
+Gemini embedding API: one vector per chunk; dimension 3072 for Pinecone index.
+Uses models/gemini-embedding-001 with output_dimensionality=3072.
 Retries on 429 (quota/rate limit) with exponential backoff.
 """
 import logging
@@ -11,9 +11,9 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-# Supported by current Gemini API; 768 dims to match Pinecone index.
+# Supported by current Gemini API; 3072 dims to match Pinecone index (margai-ghost-tutor-v2).
 EMBEDDING_MODEL = "models/gemini-embedding-001"
-EMBEDDING_DIMENSION = 768
+EMBEDDING_DIMENSION = 3072
 
 # Retry on 429: max attempts, initial delay (seconds), backoff multiplier.
 _MAX_RETRIES_429 = 3
