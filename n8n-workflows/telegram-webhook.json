@@ -205,6 +205,7 @@
       "position": [1980, 0],
       "parameters": {
         "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
           "conditions": [
             { "leftValue": "={{ $json.text.trim().toUpperCase() }}", "rightValue": "ESCALATE", "operator": { "type": "string", "operation": "equals" } }
           ],

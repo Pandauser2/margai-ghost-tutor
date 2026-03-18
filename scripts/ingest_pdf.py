@@ -140,7 +140,12 @@ def main() -> None:
             sb.table("uploads").update({"status": "failed", "error_message": "GEMINI_API_KEY not set"}).eq("id", upload_id).execute()
             sys.exit(1)
 
-        embeddings = get_embeddings_batch([t for _, t in chunks_with_ids], api_key)
+        try:
+            embeddings = get_embeddings_batch([t for _, t in chunks_with_ids], api_key)
+        except RuntimeError as e:
+            if "API key" in str(e) or "API_KEY" in str(e):
+                logger.error("Gemini API key rejected. Set a valid GEMINI_API_KEY in margai-ghost-tutor-pilot/.env (get one at https://aistudio.google.com/app/apikey).")
+            raise
         vectors = [
             (cid, emb, {"text": t})
             for (cid, t), emb in zip(chunks_with_ids, embeddings)
