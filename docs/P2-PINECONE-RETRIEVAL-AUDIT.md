@@ -1,19 +1,14 @@
 # P2 diagnostic — raw Pinecone retrieval (no Gemini)
 
-**Goal:** See exactly what Pinecone returns for a query **before** any LLM.  
-**Decision gate:**
-- Box 4.3 (or target) **missing** in top‑k → fix retrieval (topK, filters, chunking).
-- Box 4.3 **present** but answer still adds facts → fix prompt / model compliance.
+**Goal:** Inspect Pinecone output before QA model generation.
 
-**Constraints:** This path does **not** change n8n prompts, `topK`, or chunking code.
+Decision gate:
+- Target content missing in top-k -> retrieval issue (topK/filter/chunking).
+- Target content present but final answer still overreaches -> prompt/model compliance issue.
 
 ---
 
-## Option A — Python script (recommended)
-
-Same embedding model and index as ingestion (`lib/embedding.py`, env from `lib/config.py`).
-
-From repo root (or `margai-ghost-tutor-pilot/`):
+## Run (script)
 
 ```bash
 cd margai-ghost-tutor-pilot
@@ -26,32 +21,25 @@ python scripts/pinecone_retrieval_audit.py \
   --top-k 10
 ```
 
-- `--namespace` = Pinecone namespace string (usually `institute_id`, e.g. `1`).
-- `--top-k` = match n8n retriever if you want (e.g. `30`).
-- `--json` = full JSON for saving / diffing.
+Optional machine-readable output:
 
-**Metadata note:** Ingest stores `text`, `source_file`, `source_slug`, `chunk_id`. There is **no `page`** in current metadata unless you add it later.
-
----
-
-## Option B — n8n sub-workflow (manual)
-
-1. Duplicate workflow or new workflow.
-2. **Webhook** (POST) with body e.g. `{ "query": "...", "institute_id": 1 }`.
-3. **Set** — map `query_text`, `institute_id`.
-4. **Embed query (Gemini)** — `models/gemini-embedding-001` (same as prod).
-5. **Pinecone** — retrieve only, same index + `pineconeNamespace` = `String(institute_id)`.
-6. **Respond to Webhook** — return Pinecone JSON (or **Code** node: format top 10 with scores).
-
-Do **not** connect **Question and Answer Chain** or **Gemini Chat**.
+```bash
+python scripts/pinecone_retrieval_audit.py --query "..." --namespace 1 --top-k 10 --json > /tmp/p2.json
+```
 
 ---
 
-## What to check manually
+## Latest recorded run (2026-03-21)
 
-For cotton farmers / Box 4.3:
+- `EMBED_MODEL = models/gemini-embedding-001`
+- `INDEX = margai-ghost-tutor-v2`
+- `NAMESPACE = 1`
+- `TOP_K = 10`
 
-- Chunk text includes **Box 4.3** heading or equivalent cotton-farmer distress passage.
-- Seven scholar-listed causes appear **in the retrieved text**, not only in the model answer.
+Observed:
+- Ranks 1-4 include Box 4.3-relevant chunks.
+- Ranks 5-6 include contaminating adjacent-section chunks (e.g., Anantpur/fertiliser-subsidy content).
 
-Then apply the decision gate above.
+Conclusion:
+- Retrieval is not fully missing target content.
+- Mixed-context behavior is present; QA prompt/model compliance must be tightened.
