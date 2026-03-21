@@ -148,7 +148,7 @@
       "type": "@n8n/n8n-nodes-langchain.retrieverVectorStore",
       "typeVersion": 1,
       "position": [1540, 200],
-      "parameters": { "topK": 8 }
+      "parameters": { "topK": 12 }
     },
     {
       "id": "pinecone-query",

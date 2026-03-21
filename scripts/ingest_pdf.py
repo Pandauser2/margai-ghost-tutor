@@ -147,7 +147,16 @@ def main() -> None:
                 logger.error("Gemini API key rejected. Set a valid GEMINI_API_KEY in margai-ghost-tutor-pilot/.env (get one at https://aistudio.google.com/app/apikey).")
             raise
         vectors = [
-            (cid, emb, {"text": t})
+            (
+                cid,
+                emb,
+                {
+                    "text": t,
+                    "source_file": pdf_path.name,
+                    "source_slug": args.institute_slug,
+                    "chunk_id": cid,
+                },
+            )
             for (cid, t), emb in zip(chunks_with_ids, embeddings)
         ]
 

@@ -16,6 +16,10 @@ def get_pinecone_index(api_key: str, index_name: str):
     return pc.Index(index_name)
 
 
+# Pinecone request payload limit ~4 MB; batch to stay under it (e.g. 80 vectors per batch for 3072-dim + metadata).
+UPSERT_BATCH_SIZE = 80
+
+
 def upsert_vectors(
     index,
     vectors: List[tuple[str, List[float], dict]],
@@ -24,6 +28,7 @@ def upsert_vectors(
     """
     vectors: list of (id, embedding, metadata). metadata often {"text": chunk_text}.
     namespace: str(institute_id).
+    Upserts in batches to stay under Pinecone's ~4 MB request limit.
     """
     if not vectors:
         return
@@ -32,8 +37,10 @@ def upsert_vectors(
         {"id": vid, "values": vec, "metadata": meta or {}}
         for vid, vec, meta in vectors
     ]
-    index.upsert(vectors=records, namespace=namespace)
-    logger.info("Upserted %s vectors to namespace=%s", len(records), namespace)
+    for i in range(0, len(records), UPSERT_BATCH_SIZE):
+        batch = records[i : i + UPSERT_BATCH_SIZE]
+        index.upsert(vectors=batch, namespace=namespace)
+    logger.info("Upserted %s vectors to namespace=%s (batches of %s)", len(records), namespace, UPSERT_BATCH_SIZE)
 
 
 def query_index(

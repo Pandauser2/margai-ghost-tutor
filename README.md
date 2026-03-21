@@ -51,3 +51,7 @@ RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→
 - **Ingestion:** Logs extraction outcome (`total_chars`, `page_count`, `is_valid`) per upload to spot messy PDFs.
 
 See `EXPLORATION.md` and `PLAN.md` for full design and task list.
+
+## RAG quality
+
+- **Faithfulness / overreach:** `docs/RAG-FAITHFULNESS-TRACKER.md` — prompts, retrieval tuning, test matrix, change log.
