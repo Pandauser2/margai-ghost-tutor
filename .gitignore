@@ -1,2 +1,18 @@
-.vercel
 .env
+.env.*
+!.env.example
+
+# Local deployment tooling
+.vercel/
+
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS/editor noise
+.DS_Store
