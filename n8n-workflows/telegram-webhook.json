@@ -191,9 +191,7 @@
       "position": [1760, -200],
       "parameters": {
         "model": "gemini-2.5-flash",
-        "options": {
-          "systemMessage": "You are an assistant for the institute. Use ONLY the provided context to answer. If the answer is not in the context, do not make it up. If context doesn't answer or you are unsure, respond with exactly: ESCALATE. Allow general logic to explain steps; never introduce new facts not in the context."
-        }
+        "options": {}
       },
       "credentials": { "googleGeminiApi": { "name": "Google Gemini API" } }
     },

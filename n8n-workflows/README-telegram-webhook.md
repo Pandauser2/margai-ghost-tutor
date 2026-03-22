@@ -13,7 +13,7 @@ Implements PLAN.md Step 4 + 5: receive Telegram updates → log to Supabase → 
 5. **IF photo** – True → HTTP Request Telegram `getFile`, then merge with context. False → continue.
 6. **Merge** – Combine branches so one item has `query_text` (and optional file_path).
 7. **Embed query (Gemini)** – Model `gemini-embedding-001` (dimension 3072; must match Pinecone index).
-8. **Pinecone query** – Index from `PINECONE_INDEX_NAME` (e.g. `margai-ghost-tutor-v2`), namespace from `institute_id`, top_k=8.
+8. **Pinecone query** – Index from env (e.g. `margai-ghost-tutor-v2`), **namespace** `String(institute_id)`, **dimension 3072** (must match ingest). **Retriever `topK`:** `12` in this JSON; **`v6.json`** uses `30` — tune per latency/faithfulness.
 9. **Gemini Chat** – gemini-2.5-flash; system prompt: answer only from context; if unsure reply exactly ESCALATE; multimodal if photo.
 10. **IF response == ESCALATE** – Normalize response (trim, uppercase); equals "ESCALATE".
     - **True** → Telegram send clarifying message → Supabase update that row `clarification_sent=true` → Respond to Webhook 200.
@@ -71,3 +71,7 @@ Implements PLAN.md Step 4 + 5: receive Telegram updates → log to Supabase → 
 - **Confirm matches contain `metadata.text`:** Retriever output (or chain context) should have each match with `metadata.text` containing chunk content.
 - **Confirm QA chain returns non-empty answer:** For a question covered by the ingested PDF, the chain output should be non-empty (and not only "ESCALATE" when context is present).
 - **Confirm no dimension mismatch errors:** No "Vector dimension X does not match index dimension Y" in n8n or ingestion logs.
+
+### Many institutes (same workflow)
+
+Pilot hardcodes **`institute_id = 1`**. For **second+ institutes**, keep **this** RAG chain — add **webhook branches** (or Supabase `chat_id` lookup) and **per-bot Telegram credentials**. See **`docs/MULTI-INSTITUTE-ONBOARDING.md`** (Mermaid diagrams + checklist).

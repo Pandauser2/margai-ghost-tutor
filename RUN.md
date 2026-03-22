@@ -56,7 +56,7 @@ ON CONFLICT (id) DO NOTHING;
 
 ## 3. Pinecone
 
-**New to Pinecone?** Follow **[docs/PINECONE_FROM_ZERO.md](docs/PINECONE_FROM_ZERO.md)** for account, API key, and creating the index via the dashboard (no Python required).
+**New to Pinecone?** Follow **[docs/PINECONE_NAMESPACE.md](docs/PINECONE_NAMESPACE.md#setup-from-zero-first-time)** — account, API key, and creating the index (dashboard or Python).
 
 **3.1** Install the Pinecone client (use the same env you'll use for ingestion, or any Python 3.10+):
 
@@ -220,9 +220,16 @@ curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" \
 
 ## 8. Chat mapping (chat_id → institute_id)
 
-The app maps each Telegram `chat_id` to an `institute_id`. For a single-bot pilot it uses `INSTITUTE_ID_DEFAULT` (e.g. `1`). To tie a specific chat to an institute, insert into Supabase (you’d add a table or use a config table; for pilot, default is enough).
+**Pilot:** The n8n workflow **`Set institute_id and parse`** hardcodes **`institute_id = 1`** (see `n8n-workflows/v6.json`). One bot → one institute.
 
-Current behavior: if no mapping is found, `institute_id = INSTITUTE_ID_DEFAULT`.
+**Scaling to many institutes:** You do **not** need separate Pinecone indexes — keep **namespace = `str(institute_id)`**. You **do** need a clear **routing** strategy:
+
+- **Recommended:** **one Telegram bot per institute**, each webhook (or path) sets the right `institute_id` in n8n → merge into one RAG pipeline.  
+- **Alternative:** **one bot**, Supabase map `chat_id` → `institute_id` (e.g. after `/start slug`).
+
+Full architecture, Mermaid diagrams, and per-institute checklist: **[`docs/MULTI-INSTITUTE-ONBOARDING.md`](docs/MULTI-INSTITUTE-ONBOARDING.md)**.
+
+`INSTITUTE_ID_DEFAULT` in `.env` / `lib/config.py` is for **scripts** and single-tenant assumptions — replace hardcoded `1` in n8n when you go multi-tenant.
 
 ---
 

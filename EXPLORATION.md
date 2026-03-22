@@ -2,14 +2,20 @@
 
 **Purpose:** Design and context for the bare-minimum pilot. **Implementation:** n8n (Telegram webhook) + Python scripts (ingestion, weekly report, cleanup); see [RUN.md](RUN.md) and [PLAN.md](PLAN.md).
 
+**Doc map (kept in sync with code):** [MULTI-INSTITUTE-ONBOARDING.md](docs/MULTI-INSTITUTE-ONBOARDING.md) (many tenants), [PINECONE_NAMESPACE.md](docs/PINECONE_NAMESPACE.md) (index + namespace), [PRODUCTION-DEPLOYMENT-PLAN.md](docs/PRODUCTION-DEPLOYMENT-PLAN.md), [RAG-FAITHFULNESS-TRACKER.md](docs/RAG-FAITHFULNESS-TRACKER.md) (RAG quality).
+
 ---
 
 ## 1. Codebase and context
 
-- **Pilot implementation** in this repo: **n8n** workflow for the Telegram webhook (`n8n-workflows/telegram-webhook.json`), **Python scripts** for ingestion (`scripts/ingest_pdf.py`), weekly report (`scripts/weekly_report.py`), and log cleanup (`scripts/cleanup_logs.py`). No Vercel in the current pilot.
+- **Pilot implementation** in this repo: **n8n** hosts the Telegram webhook. Workflow exports:
+  - **`n8n-workflows/v6.json`** — full production-style flow. Embed node: **`modelName`:** `models/gemini-embedding-001`, **`dimensions`: 3072** (aligned with `lib/embedding.py` + Pinecone).
+  - **`n8n-workflows/telegram-webhook.json`** — slimmer reference workflow (may differ on `topK`, credentials shape).
+  **Python scripts:** ingestion (`scripts/ingest_pdf.py`), weekly report (`scripts/weekly_report.py`), log cleanup (`scripts/cleanup_logs.py`). No Vercel.
 - **Reusable context in repo:**
-  - `upsc-test-engine/` provides **PDF extraction** (pdfplumber, PyMuPDF, OCR via `pdf_extraction_service.py`). The ingestion script runs from repo root and **reuses** `extract_hybrid()` when available; same chunk/embed concepts (800–1000 chars, overlap, “answer from context only”).
-  - Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per `institute_id`), Gemini (embedding + gemini-2.5-flash for RAG).
+  - `upsc-test-engine/` provides **PDF extraction** (pdfplumber, PyMuPDF, OCR via `pdf_extraction_service.py`). Ingestion runs from repo root and **reuses** `extract_hybrid()` when available.
+  - **Chunking** (`lib/chunking.py`): target **1000** chars, overlap **200**, paragraph/section-aware splits (not a single naive fixed window).
+  - Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (**one shared index**, **namespace = string `institute_id`**), Gemini (**embedding 3072-dim** + **gemini-2.5-flash** for RAG in n8n).
 
 **Conclusion:** Pilot: **Telegram** for students; **manual PDF ingestion** (teacher sends PDFs via Drive/WhatsApp → you run `ingest_pdf.py` to process and upsert to Pinecone with `namespace = institute_id`; see §5.2). **n8n** hosts the webhook; **scripts** handle ingestion, report, cleanup. Supabase (`institutes`, `uploads`, `query_logs`), Pinecone (one namespace per institute). Contact info (`email_for_report`, `ta_telegram_id`) in `institutes`. WhatsApp in Month 2 (§5.4).
 
@@ -19,11 +25,11 @@
 
 | Component | Role in pilot | Notes |
 |-----------|----------------|--------|
-| **n8n** | Hosts the **Telegram webhook** (workflow `n8n-workflows/telegram-webhook.json`): receives updates, maps `chat_id` → `institute_id`, runs RAG (embed → Pinecone → Gemini), replies or clarify / escalate. Uses **service role** for Supabase; env vars loaded from n8n / environment. | Import workflow into n8n; set Webhook Production URL as Telegram webhook URL. Ingestion, weekly report, cleanup are **manual scripts** run locally. |
-| **Supabase** | Tables: `institutes`, `uploads`, `query_logs`. No auth/dashboard. Webhook and scripts use **service role** key (bypasses RLS). | RLS with `institute_id = 1` for defense in depth if anon key is ever used. |
-| **Pinecone serverless** | One **namespace per institute** = `institute_id` (or slug). Create index with dimension matching embedding model (e.g. **768**). | **Multi-tenancy:** Upsert with `namespace: institute_id`. Backend identifies which bot/institute a message belongs to and queries **only that namespace**. Institute A never sees Institute B data. |
-| **Telegram** | **14-day pilot:** One bot. Inbound → **webhook** (n8n URL); outbound → Bot API from webhook. | Free, ~5 min setup. Pivot to **WhatsApp API** (paid) in Month 2. |
-| **Google Gemini** | (1) **Embedding:** `models/gemini-embedding-001` with `output_dimensionality=768`. (2) **Chat/vision:** **gemini-2.5-flash** (multimodal, free tier). | Embedding in `lib/embedding.py` (ingestion + webhook). RAG uses same model for generateContent. |
+| **n8n** | Hosts the **Telegram webhook** (`v6.json` or `telegram-webhook.json`): receives updates → **Set `institute_id` + parse** → RAG (**LangChain** embed → Pinecone retriever → **Question and Answer** chain → Gemini Chat). Replies or clarify / escalate. **Pilot:** `institute_id` is **hardcoded** in the Set node (e.g. `1`), not derived from `chat_id` lookup. Uses **service role** for Supabase; credentials in n8n. | Import workflow; map every credential on target instance. Multi-institute: see [MULTI-INSTITUTE-ONBOARDING.md](docs/MULTI-INSTITUTE-ONBOARDING.md). |
+| **Supabase** | Tables: `institutes`, `uploads`, `query_logs`. Webhook + scripts use **service role** (bypasses RLS). | RLS e.g. `institute_id = 1` for pilot if anon key ever used. |
+| **Pinecone serverless** | Index e.g. **`margai-ghost-tutor-v2`**, dimension **3072** (must match `lib/embedding.py`). **Namespace = `str(institute_id)`** only (numeric id from Supabase, not slug string). | Same index for all institutes; namespaces isolate vectors. |
+| **Telegram** | **Pilot:** One bot. Inbound → webhook; outbound → Bot API (`sendMessage` / `getFile`). | Multi-bot production: one bot per institute recommended (same doc above). |
+| **Google Gemini** | (1) **Embedding:** `models/gemini-embedding-001`, **`output_dimensionality=3072`** (`lib/embedding.py`; ingestion + n8n embed node must match). (2) **Chat:** **gemini-2.5-flash** via n8n LangChain Gemini Chat sub-node. | **n8n UI** does not expose a **system message** on Gemini Chat; strict “context-only” prompt is **deferred** (see [RAG-FAITHFULNESS-TRACKER.md](docs/RAG-FAITHFULNESS-TRACKER.md) Task 2). Retrieval QA chain still supplies context + question. |
 
 ---
 
@@ -40,9 +46,9 @@
     - **OCR trigger per page:** native text &lt; threshold (e.g. 100 chars) OR garbled heuristics (Latin-1 supplement ratio, first-2-pages header threshold, garbled-pattern count). Doc-level: if total native text &lt; 5000 chars, treat as image-heavy → OCR all pages.
     - **OCR:** Tesseract hin+eng, OpenCV preprocessing (gray, adaptive threshold, denoise), ftfy, noise-line filter. Parallel OCR for pages that need it. Merge: use OCR when OCR length ≥ native × 0.8 or OCR &gt; native.
   - **Pilot:** The ingestion script runs from repo root and calls `extract_hybrid()` from upsc-test-engine when available (same logic as `pdf_extraction_service.py`).
-  - Chunk: 800–1000 chars, overlap (e.g. 100–200 chars). Output `{ text, id }` with stable IDs (e.g. `slug + hash(file_path + chunk_index)`).
-  - Embed: Gemini via `lib/embedding.py` (768 dim).
-  - Upsert: Pinecone with `namespace = institute_id` (or slug).
+  - Chunk: **`lib/chunking.py`** — `CHUNK_SIZE=1000`, `OVERLAP=200`, section/paragraph-aware; stable IDs (`prefix + hash(...)`).
+  - Embed: Gemini via `lib/embedding.py` — **3072** dimensions (`EMBEDDING_MODEL`, `EMBEDDING_DIMENSION`).
+  - Upsert: Pinecone with **`namespace=str(institute_id)`**; vector metadata includes `text`, `source_file`, `source_slug`, `chunk_id`.
 - **Dependencies:** Gemini API key, Pinecone API key + index, Supabase. TA/email from `institutes` table.
 - **Edge cases:** Invalid/empty PDF → reject at upload; extraction failure → email to **ALERT_EMAIL**. Duplicate slug → uniqueness validation rejects or warns.
 
@@ -57,10 +63,10 @@
   - Parse body; extract `query_text`, `is_photo` (type === image), and if photo then media ID/URL for later.
   - Insert into Supabase `query_logs`: `institute_id`, `student_telegram_id` (from `message.from.id` or `message.chat.id`), optionally `student_name` (from `message.from.first_name`), `timestamp`, `query_text`, `is_photo`, `escalated = false`. Storing `student_telegram_id` lets you identify which student queries the most and which student each escalation came from.
   - Resolve namespace: use `institute_id` (backend identifies which bot/institute this chat belongs to; see §5.1). Namespace = `institute_id` for Pinecone query.
-  - Retrieve: Pinecone query with embedding of `query_text` (same embedding model as ingestion), namespace = institute_id, top K (e.g. 5–10).
-  - Build prompt: system = “You are a helpful Indian coaching teacher… Answer only from context. If context doesn’t answer or unsure, respond with exactly: ESCALATE”; user = context chunks + user query (and if photo: add image part). **Context** = the retrieved chunks from Pinecone (relevant passages from the institute’s uploaded PDF study material). Use **Knowledge-lock** from §5.3: strict for content (e.g. "This wasn't covered… I've flagged this for your teacher!" or ESCALATE); flexible for tone; allow general logic to explain steps, never new facts.
-  - Call Gemini generateContent: if `is_photo` then send image (inline base64) + text; else text only. Model = **gemini-2.5-flash** (Gemini 2.0 deprecated; use 2.5 only).
-  - **When the model outputs ESCALATE:** Per the system prompt, the model returns exactly "ESCALATE" when (1) the provided context does **not** contain an answer to the student's question, or (2) the model is **unsure** (e.g. ambiguous question, only partially relevant context, or low confidence). **There is no separate layer** — Gemini itself judges whether it can answer or is unsure; we do not call a separate confidence API or a second model. We rely on the instruction ("If context doesn't answer or unsure, respond with exactly: ESCALATE") and the model's own reasoning to output ESCALATE when appropriate.
+  - Retrieve: Pinecone query with embedding of `query_text` (**same 3072-dim model/dims as ingestion**), `namespace = str(institute_id)`. **Retriever `topK`:** e.g. **30** in `n8n-workflows/v6.json`, **12** in `telegram-webhook.json` (tune per faithfulness/latency).
+  - **Prompting in n8n:** Implemented as **LangChain Question and Answer** + **Gemini Chat** sub-node. There is **no** configurable system message in the Gemini Chat **UI** today; behavior follows the chain’s default QA template + model. **Target behavior** (Knowledge-lock, exact **ESCALATE**) remains as in §5.3 / §3.2 for product intent; optional future: HTTP Gemini with `systemInstruction`, or custom prompt node. **Context** = retrieved chunks; multimodal if photo path enabled.
+  - Call Gemini (via chain): model **gemini-2.5-flash** where configured.
+  - **When the model outputs ESCALATE (design intent):** The model should return exactly **ESCALATE** when (1) the provided context does **not** contain an answer, or (2) it is **unsure**. **No separate confidence API** — relies on prompt/chain + model behavior. With the current n8n setup (no system message in UI), achieving strict ESCALATE discipline may require a future **custom prompt** or **HTTP Gemini** path; see [RAG-FAITHFULNESS-TRACKER.md](docs/RAG-FAITHFULNESS-TRACKER.md).
   - **ESCALATE check (when and how):** Trigger **immediately after** Gemini’s `generateContent` returns. Logic: take the **raw response text** from Gemini → `normalized = response.trim().toUpperCase()` → if `normalized === "ESCALATE"` then run clarifying-question branch (see below); else treat as the answer and reply to the student. So we only escalate when the model’s **entire** reply is exactly the word ESCALATE (allowing for leading/trailing whitespace and case). Phrases like “I will escalate” or “Answer: ESCALATE” do **not** match and are sent to the student as-is.
   - **Clarifying question before escalation:** When the model returns ESCALATE (or when retrieval is empty/no relevant chunks), **do not escalate immediately**. First send the student a **single clarifying message**, e.g. "I couldn't find a clear answer in your study material. Could you add a bit more detail (e.g. chapter or topic) or rephrase? If you'd prefer to send this to your TA, reply with **escalate**." Mark the `query_logs` row with `clarification_sent = true` (optional column) and do **not** set `escalated = true` or notify the TA. When the **next** message from the same `student_telegram_id` arrives: (1) If the new message text (normalized, e.g. trim + lowercase) is an explicit escalate intent (e.g. "escalate", "send to ta", "forward to ta"), then treat it as escalation: set `escalated = true` on the **previous** query_logs row (the one that had clarification_sent = true), reply to the student "We've escalated your doubt to your TA…", and send the TA the **original** doubt (text + image from that previous row). (2) Otherwise treat the new message as a **fresh query** (new row, full RAG again). So escalation happens only after at least one clarifying question, unless the student explicitly asks to escalate.
   - If after clarification the student asks to escalate (or we get ESCALATE again on a follow-up): set `escalated = true` in DB (on the relevant row), get `ta_telegram_id` from `institutes` (pilot; WhatsApp in Month 2). **Reply to the student first** with e.g. "We've escalated your doubt to your TA – they'll get back to you." Then send **Telegram** message to TA with **the full message that led to escalation**: include **who it's from** (e.g. "From: {student_telegram_id}" or "From: {student_name}" from the same query_logs row), then student text and student image when present (i.e. the whole WhatsApp message — text and/or photo). So: (1) send the original student text (if any), (2) attach the student’s image (if any) by fetching media from provider and re-sending to TA, so the TA sees exactly what the student sent.
@@ -80,7 +86,7 @@
 
 - **Trigger:** **Manual** — run `scripts/weekly_report.py` when you want the report. No schedule; you send the email yourself (script outputs report text).
 - **Logic:**
-  - Query Supabase: `query_logs` where `institute_id = 1` and `timestamp` in last 7 days.
+  - Query Supabase: `query_logs` where `institute_id` = chosen id (default **1**; override with `python scripts/weekly_report.py --institute-id N`) and `timestamp` in last 7 days.
   - Keywords: three arrays (JEE, NEET, UPSC) — **start with placeholders from online research** (e.g. JEE: kinematics, thermodynamics, electrochemistry, chemical bonding; NEET: biology, anatomy, physiology; UPSC: polity, history, geography, economy, environment). Store as JSON in the script or config. Count matches in `query_text` (string includes, case-insensitive).
   - Compute: total queries, escalation % (where `escalated = true`), top 5 topics by count. Optionally: **top N students by query count** (GROUP BY `student_telegram_id`), and **which students had escalations** (rows where `escalated = true` with `student_telegram_id` / `student_name`) so the report shows who queries most and who escalated.
   - **Generate the email body text** (plain-text insight report with the summary above). Optionally include a "To:" line (e.g. from `email_for_report` from sheet last row) so you can copy and paste. **Do not send the email** — output the generated text only; you send the email manually.
@@ -99,7 +105,7 @@
 
 - **Table: `institutes`** (optional but recommended for multi-institute)
   - `id` (int, **auto-generated** — `SERIAL` or `GENERATED BY DEFAULT AS IDENTITY`, PK). Supabase/Postgres generates 1, 2, 3… on INSERT.
-  - `slug` (text, unique, not null) — e.g. `fiitjee-kolkata`; used as Pinecone namespace.
+  - `slug` (text, unique, not null) — e.g. `fiitjee-kolkata`; used by **ingest** to resolve **`institute_id`**. **Pinecone namespace** = **`str(institute_id)`**, not the slug string.
   - `email_for_report` (text, nullable) — where to send the weekly insight report (plain-text email). Can be set from sheet or manually; scripts and webhook read from here (not a sheet).
   - `ta_telegram_id` (text, nullable) — **Pilot:** Telegram user/chat ID for TA; used when escalating (send full student message here). Month 2: add `ta_whatsapp_number` when offering WhatsApp.
   - Optionally: `created_at` (timestamptz). When adding an institute, `INSERT INTO institutes (slug, email_for_report, ta_telegram_id) VALUES (...) RETURNING id` gives the new `institute_id`. You can sync these from the sheet (e.g. "last row") into `institutes` so scripts read from Supabase (no sheet).
@@ -131,7 +137,7 @@
 ## 5. Pilot implementation (n8n + scripts)
 
 - **Ingestion:** Run `scripts/ingest_pdf.py` with PDF path and institute slug. Script uses `extract_hybrid()` (from upsc-test-engine when available) → chunk → embed (`lib/embedding.py`) → Pinecone upsert (`namespace = institute_id`). On error, alert (e.g. ALERT_EMAIL).
-- **Telegram:** **n8n** hosts the Telegram webhook (`n8n-workflows/telegram-webhook.json`). Webhook verifies secret_token (optional) → parse update → if incoming text is "escalate" and there is a recent row for this student with `clarification_sent = true`, treat as escalate that row (Supabase update, reply to student, notify TA); else insert `query_logs` → embed query → Pinecone query (namespace = institute_id) → build prompt (Knowledge-lock §5.3) → Gemini generateContent (gemini-2.5-flash) → if ESCALATE then send clarifying question (`clarification_sent = true`); else if student asked to escalate then reply "We've escalated…" + get `ta_telegram_id` from `institutes` + Telegram to TA with full message; else send answer to student.
+- **Telegram:** **n8n** hosts the webhook (`v6.json` or `telegram-webhook.json`). Flow: optional secret_token → parse → escalate-intent branch if needed → insert `query_logs` → embed (**3072-dim**) → Pinecone (`namespace=str(institute_id)`) → **LangChain Retrieval QA** + **Gemini Chat** → normalize answer → if **ESCALATE** then clarifying path; else reply. See §3.2 for prompt/UI limits.
 - **Weekly report:** Run `scripts/weekly_report.py`. Script reads Supabase (last 7 days, institute_id), computes keyword counts, escalation %, top topics, optional top students → outputs email body text; you send the email manually. "To:" from `institutes.email_for_report`.
 - **Cleanup:** Run `scripts/cleanup_logs.py`. Deletes `query_logs` where `timestamp` < now − 30 days.
 
@@ -142,7 +148,7 @@ Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion 
 ### 5.1 Multi-tenancy (multiple coaching centers)
 
 - **Mechanism:** Pinecone **namespaces**. Each coaching center has a unique `institute_id` in Supabase.
-- **Upsert:** When processing PDFs for an institute, specify Pinecone `namespace: institute_id` (or a stable slug). All vectors for that institute live in that namespace.
+- **Upsert:** Pinecone `namespace=str(institute_id)` only (matches `ingest_pdf.py` + n8n expression `String($json.institute_id)`).
 - **Query:** When a Telegram message comes in, the backend identifies **which bot/institute** the conversation belongs to (e.g. bot token, or deep link / start parameter). It then queries Pinecone **only in that institute's namespace**. Institute A never sees Institute B's data.
 - **RLS:** Supabase RLS by `institute_id` adds defense in depth for any non–service_role access.
 
@@ -160,10 +166,10 @@ Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion 
 
 ### 5.3 Knowledge-lock (strict content, flexible tone)
 
-- **Rule:** **Strict for content, flexible for tone.**
-- **System prompt (core):** *"You are an assistant for [Institute Name]. Use ONLY the provided context to answer. If the answer is not in the context, do not make it up. Instead, say: 'This wasn't covered in our current notes. I've flagged this for your teacher!'"*
-- **Exception:** Allow the LLM to use **general English/Math logic** to explain the teacher's steps more clearly (e.g. rephrasing, breaking into steps). **Never** introduce new outside facts or content not in the provided context.
-- In the pilot flow, "flagged for your teacher" ties into the existing **clarify → escalate** path (e.g. student can reply "escalate" to send to TA).
+- **Rule:** **Strict for content, flexible for tone** — product intent for answers and **ESCALATE** behavior (§3.2).
+- **Implementation note:** n8n **Gemini Chat** node has **no system-message field** in the UI; the exported workflow uses **`options: {}`**. Enforcing Knowledge-lock in production may require **HTTP Request → Gemini API** (`systemInstruction`), a **custom prompt** node, or a future n8n release. Track experiments in [RAG-FAITHFULNESS-TRACKER.md](docs/RAG-FAITHFULNESS-TRACKER.md).
+- **Reference wording (for future prompts):** *Use ONLY the provided context… If not in context, respond with exactly: ESCALATE* (then workflow runs clarify → escalate path).
+- **Exception (intent):** General English/Math **logic** to explain steps already in context is OK; **no new facts** outside context.
 
 ---
 
@@ -211,7 +217,7 @@ Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion 
 
 2. **Webhook response time:** Telegram allows a few seconds. Full flow (Supabase insert → embed → Pinecone → Gemini → Telegram reply) can exceed that. Prefer: (A) webhook only inserts to Supabase and returns 200, then a **separate process** (e.g. run manually or on a timer, e.g. every 1 min) processes new `query_logs` rows that don’t have a “replied” flag yet; or (B) we accept risk and run the whole flow in the webhook (and hope it’s under 3s for simple queries)? (A) is safer for production.
 
-3. **Embedding model and dimension:** Confirm embedding model (e.g. `gemini-embedding-001`) and **vector dimension** (e.g. 768) so the Pinecone index is created correctly.
+3. **Embedding model and dimension (resolved):** **`models/gemini-embedding-001`**, **`output_dimensionality=3072`** in `lib/embedding.py`. Pinecone index **`margai-ghost-tutor-v2`** (or your name) must be **3072** cosine; n8n embed node must match ingestion.
 
 4. **Institute slug (resolved):** **Manual input field** for institute name/slug. **Uniqueness validation** (e.g. check Pinecone namespaces or Supabase slugs table) so no duplicate slug.
 
@@ -229,7 +235,7 @@ Pinecone: use `namespace = institute_id` for all upserts and queries (ingestion 
 - **Phase 2 – Telegram + RAG (pilot):** Webhook (n8n; verify secret_token): receive Telegram message → log to Supabase → Pinecone retrieval (namespace = institute_id) → Gemini (Knowledge-lock prompt §5.3) → reply or clarify → escalate (reply to student, then notify TA via Telegram from `institutes.ta_telegram_id`). Manual test with text and photo.
 - **Phase 3 – Reports + cleanup:** Weekly report script: **manual run** (`scripts/weekly_report.py`), generate insight report email text (you send email manually). Cleanup script: **manual run** (`scripts/cleanup_logs.py`) when you want to prune old logs. Error-handling emails.
 
-Once you confirm the open points above, this exploration is enough to implement the pilot step by step.
+**§8.3 embedding dimension:** resolved in code (3072). Remaining §8 items (e.g. async webhook, Drive URLs) are still product choices.
 
 ---
 

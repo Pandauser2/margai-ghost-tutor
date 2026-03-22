@@ -1,0 +1,757 @@
+{
+  "name": "v6",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "396a8caf-3db1-438e-9001-7a64373531fc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1936,
+        128
+      ],
+      "webhookId": "telegram-ghost-tutor",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "institute_id",
+              "name": "institute_id",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "student_telegram_id",
+              "name": "student_telegram_id",
+              "value": "={{ $json.body.message.from.id }}",
+              "type": "string"
+            },
+            {
+              "id": "student_name",
+              "name": "student_name",
+              "value": "={{ $json.body.message.from.first_name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "query_text",
+              "name": "query_text",
+              "value": "={{ $json.body.message.text || $json.body.message.caption || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "is_photo",
+              "name": "is_photo",
+              "value": "={{ !!$json.body.message.photo }}",
+              "type": "boolean"
+            },
+            {
+              "id": "chat_id",
+              "name": "chat_id",
+              "value": "={{ $json.body.message.chat.id }}",
+              "type": "number"
+            },
+            {
+              "id": "photo_file_id",
+              "name": "photo_file_id",
+              "value": "={{ $json.body.message.photo && $json.body.message.photo.slice(-1)[0].file_id }}",
+              "type": "string"
+            },
+            {
+              "id": "update_id",
+              "name": "update_id",
+              "value": "={{ $json.body.update_id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "199b9789-41df-4a3c-916b-2400d9dbb492",
+      "name": "Set institute_id and parse",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1712,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "query_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "institute_id",
+              "fieldValue": "={{ $json.institute_id }}"
+            },
+            {
+              "fieldId": "student_telegram_id",
+              "fieldValue": "={{ $json.student_telegram_id }}"
+            },
+            {
+              "fieldId": "student_name",
+              "fieldValue": "={{ $json.student_name }}"
+            },
+            {
+              "fieldId": "query_text",
+              "fieldValue": "={{ $json.query_text }}"
+            },
+            {
+              "fieldId": "is_photo",
+              "fieldValue": "={{ $json.is_photo }}"
+            },
+            {
+              "fieldId": "escalated",
+              "fieldValue": "={{ false }}"
+            }
+          ]
+        }
+      },
+      "id": "6f041e76-6862-4ea7-8948-b3f3e59a4732",
+      "name": "Supabase Insert query_logs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        128
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "B2Xr7ddO80HXoUGY",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-photo",
+              "leftValue": "={{ $json.is_photo }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5c3e111a-a222-4799-a4f9-1f3785cacd62",
+      "name": "IF photo",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getFile?file_id={{ $('Set institute_id and parse').item.json.photo_file_id }}",
+        "options": {}
+      },
+      "id": "98786f27-db9c-4450-88c5-fa74056ef821",
+      "name": "Telegram getFile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1072,
+        -128
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "f8042ec5-7d51-4f0a-988c-1d64b02d1f9c",
+      "name": "Merge for embed",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -976,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001",
+        "dimensions": 3072
+      },
+      "id": "20a5fb5a-f296-4228-b459-db635a0ba8ec",
+      "name": "Embed query (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        496
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QozMjETOQ0f1vsds",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.query_text || '' }}",
+        "options": {}
+      },
+      "id": "9b42c662-6140-4f72-93fb-6dec91ae4cf5",
+      "name": "Question and Answer Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainRetrievalQa",
+      "typeVersion": 1.3,
+      "position": [
+        -544,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "topK": 30
+      },
+      "id": "bc53752c-ca7a-4d96-97be-629f7df69adc",
+      "name": "Vector Store Retriever",
+      "type": "@n8n/n8n-nodes-langchain.retrieverVectorStore",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "margai-ghost-tutor-v2",
+          "mode": "list",
+          "cachedResultName": "margai-ghost-tutor-v2"
+        },
+        "options": {
+          "pineconeNamespace": "={{ String($json.institute_id) }}"
+        }
+      },
+      "id": "bc33e945-7017-4159-ab18-07e1a72db825",
+      "name": "Pinecone query",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        336
+      ],
+      "credentials": {
+        "pineconeApi": {
+          "id": "4rVIl2ziL8q4Y0rY",
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "text",
+              "name": "text",
+              "value": "={{ $json.response?.text ?? $json.text ?? 'ESCALATE' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ebd3e3a6-dd32-41c4-acaa-b42db28115b4",
+      "name": "Set normalized answer text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -160,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "d88bddb1-56de-45ec-9a9a-4c6cdec0ca13",
+      "name": "Gemini Chat (gemini-2.5-flash)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        160
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QozMjETOQ0f1vsds",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.text.trim().toUpperCase() }}",
+              "rightValue": "ESCALATE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "68c01a7f-2f96-4e60-8320-6463729bbba1"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "02be30f1-15e3-4f32-aad2-c87d67ff49bd",
+      "name": "IF response == ESCALATE",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        48,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Webhook').first().json.body.message.chat.id }}",
+        "text": "I couldn't find a clear answer in your study material. Could you add a bit more detail (e.g. chapter or topic) or rephrase? If you'd prefer to send this to your TA, reply with **escalate**.",
+        "additionalFields": {}
+      },
+      "id": "6656ca3d-e694-4126-b976-d088a872ff9e",
+      "name": "Telegram clarifying question",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        272,
+        32
+      ],
+      "webhookId": "de4b86d6-7520-4b23-8c5b-169929f065b4",
+      "credentials": {
+        "telegramApi": {
+          "id": "yI0lfHB5aozCyuno",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "public.query_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "clarification_sent",
+              "fieldValue": true
+            }
+          ]
+        }
+      },
+      "id": "160a1733-9e90-4b30-b5d1-377f36c7ec32",
+      "name": "Supabase update clarification_sent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        496,
+        32
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "B2Xr7ddO80HXoUGY",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Webhook').first().json.body.message.chat.id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "11da9a6b-9030-4985-a735-36168e972e54",
+      "name": "Telegram reply with answer",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        272,
+        224
+      ],
+      "webhookId": "50f593fe-e812-4459-a742-2c1a8be7aa58",
+      "credentials": {
+        "telegramApi": {
+          "id": "yI0lfHB5aozCyuno",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "text",
+              "name": "text",
+              "value": "I couldn't read your question. Please send your doubt as text (or as a photo with a caption) so I can look it up in your study material.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "84155e5a-28ff-47b0-a173-9a8ee25f4a12",
+      "name": "Set missing query_text message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -736,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "27e6b70f-77f0-4505-948a-9ad9cabc9e65",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        704,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "subject": "MargAI Ghost Tutor webhook error",
+        "options": {}
+      },
+      "id": "94571352-f5cc-484b-b0dc-f39b258c0845",
+      "name": "Email ALERT_EMAIL on failure",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        704,
+        320
+      ],
+      "webhookId": "f8c6aa30-6bf8-4757-910c-a701cfded57c",
+      "disabled": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "81f8c62f-0f6f-4009-be73-4da2f26292f8",
+              "leftValue": "={{ !!($json.query_text && $json.query_text.trim()) }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -816,
+        160
+      ],
+      "id": "e2c2019a-0e68-44f5-a303-bfb2b6ce1cb0",
+      "name": "If query_text present"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set institute_id and parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set institute_id and parse": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert query_logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Insert query_logs": {
+      "main": [
+        [
+          {
+            "node": "IF photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF photo": {
+      "main": [
+        [
+          {
+            "node": "Telegram getFile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge for embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram getFile": {
+      "main": [
+        [
+          {
+            "node": "Merge for embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge for embed": {
+      "main": [
+        [
+          {
+            "node": "If query_text present",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Question and Answer Chain": {
+      "main": [
+        [
+          {
+            "node": "Set normalized answer text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set normalized answer text": {
+      "main": [
+        [
+          {
+            "node": "IF response == ESCALATE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed query (Gemini)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone query",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vector Store Retriever": {
+      "ai_retriever": [
+        [
+          {
+            "node": "Question and Answer Chain",
+            "type": "ai_retriever",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone query": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Vector Store Retriever",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat (gemini-2.5-flash)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Question and Answer Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF response == ESCALATE": {
+      "main": [
+        [
+          {
+            "node": "Telegram clarifying question",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram reply with answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram clarifying question": {
+      "main": [
+        [
+          {
+            "node": "Supabase update clarification_sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase update clarification_sent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram reply with answer": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set missing query_text message": {
+      "main": [
+        [
+          {
+            "node": "Telegram reply with answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email ALERT_EMAIL on failure": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If query_text present": {
+      "main": [
+        [
+          {
+            "node": "Question and Answer Chain",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set missing query_text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "a86e04ef-1cd8-47e2-bf83-a3151c3731bf",
+  "meta": {
+    "instanceId": "08aca0963c6c4a31781c2dd1f2d5436afb6f22f957bd5bfd8d173f3edc0f8369"
+  },
+  "id": "d4kO63ddJN5FeeK4",
+  "tags": []
+}

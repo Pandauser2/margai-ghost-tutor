@@ -1,6 +1,8 @@
-# Install community embedding node (fix dimension 3072 vs 768)
+# Install community embedding node (optional / legacy dimension mismatch)
 
-The built-in **Embed query (Gemini)** node can output 3072 dimensions (e.g. with `gemini-embedding-2-preview`), while our Pinecone index uses **768** dimensions, causing:  
+> **Current default stack:** Ingestion + index are **3072** (`lib/embedding.py`, `margai-ghost-tutor-v2`). Prefer aligning the **built-in** n8n Gemini embed node to **3072** first. Use this doc only if you must force a **non-matching** embed output (e.g. legacy 768 index) via a community node.
+
+The built-in **Embed query (Gemini)** node can output **3072** (e.g. `gemini-embedding-2-preview`), while an **old** Pinecone index might still be **768**, causing:  
 `Vector dimension 3072 does not match the dimension of the index 768`.
 
 A community node that supports **configurable output dimensions** fixes this.

@@ -33,7 +33,7 @@ Build a **14-day pilot** where students ask doubts over **Telegram** and get ans
   - [x] 🟩 Enable **RLS** on `institutes` and `query_logs` (e.g. policy `FOR ALL USING (institute_id = 1)` for pilot so rows are scoped by institute). n8n/backend uses service_role and bypasses RLS.
 
 - [x] 🟩 **Step 2: Pinecone index and namespace convention**
-  - [x] 🟩 Create Pinecone serverless index with dimension matching embedding model (e.g. 768).
+  - [x] 🟩 Create Pinecone serverless index with dimension **3072** matching `lib/embedding.py` (`gemini-embedding-001`); index name e.g. **`margai-ghost-tutor-v2`**.
   - [x] 🟩 Document convention: upsert and query always use `namespace = institute_id` (or stable slug); one namespace per institute.
 
 - [x] 🟩 **Step 3: PDF ingestion pipeline (Phase 1)**
@@ -51,7 +51,7 @@ Build a **14-day pilot** where students ask doubts over **Telegram** and get ans
 - [x] 🟩 **Step 5: RAG + reply flow (Phase 2)**
   - [x] 🟩 Insert into `query_logs` (institute_id, student_telegram_id, student_name, query_text, is_photo, escalated=false).
   - [x] 🟩 Embed query text; Pinecone query with `namespace = institute_id`, top K 5–10.
-  - [x] 🟩 Build prompt: Knowledge-lock system prompt (§5.3 EXPLORATION) + “If you cannot answer from context, respond with exactly: ESCALATE.” User = context chunks + query (+ image if photo). Call Gemini **gemini-2.5-flash** (text + optional image).
+  - [x] 🟩 RAG generate: LangChain **Question and Answer** + **Gemini Chat** (`gemini-2.5-flash`). **Knowledge-lock / strict ESCALATE** = product intent in EXPLORATION §5.3; **n8n Gemini Chat has no system-message UI** today — see EXPLORATION §3.2 and `docs/RAG-FAITHFULNESS-TRACKER.md` Task 2 for enforcement options.
   - [x] 🟩 If response normalized === "ESCALATE": send clarifying message to student; set `clarification_sent = true` on row; do not escalate. If next message from same student is “escalate” (normalized): set `escalated = true` on previous row; reply to student; send TA full message (From: student, text + image) via Telegram using `institutes.ta_telegram_id`. Else: reply to student with Gemini answer via Telegram sendMessage.
   - [x] 🟩 Empty/weak retrieval: same clarifying-question path. On API failure: email ALERT_EMAIL, reply “Something went wrong.”
 
@@ -62,6 +62,19 @@ Build a **14-day pilot** where students ask doubts over **Telegram** and get ans
 - [x] 🟩 **Step 7: Observability (optional, not blocking)**
   - [x] 🟩 Where possible, log request duration (webhook received → reply sent) to detect latency (n8n).
   - [x] 🟩 Where possible, log per-upload extraction outcome (e.g. total chars, page count, errors) to detect messy PDFs (fallback: LlamaParse/Unstructured.io).
+
+---
+
+## Multi-institute (post-pilot)
+
+Pilot uses **one bot** and **hardcoded `institute_id = 1`** in n8n (`Set institute_id and parse`). **Data model and Pinecone are already multi-tenant** (namespaces + `institute_id` on `query_logs` / `uploads`).
+
+**Canonical architecture & onboarding:** [`docs/MULTI-INSTITUTE-ONBOARDING.md`](docs/MULTI-INSTITUTE-ONBOARDING.md) — includes:
+
+- **Telegram:** recommended **one bot per institute** (white-label); alternative **single shared bot** with `chat_id` → `institute_id` in Supabase.
+- **n8n:** **one workflow** — extend with **multiple Webhook paths** (each sets `institute_id`) → **Merge** into the existing RAG pipeline; per-bot tokens for send/getFile.
+- **Pinecone / ingest:** unchanged pattern — same index, `namespace = str(institute_id)`; `ingest_pdf.py` per `institute_slug`.
+- **Diagrams:** Mermaid architecture + sequence + decision flow in that doc.
 
 ---
 

@@ -4,7 +4,11 @@ Webhook now runs on **n8n** (no Vercel). Telegram bot points to n8n webhook URL.
 
 RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→escalate to TA. Multi-tenant via Pinecone namespaces (`institute_id`).
 
-**→ Step-by-step run guide (bash commands): [RUN.md](RUN.md)**
+**→ Step-by-step run guide (bash commands): [RUN.md](RUN.md)**  
+**→ Onboarding many institutes (bots, n8n, webhooks): [docs/MULTI-INSTITUTE-ONBOARDING.md](docs/MULTI-INSTITUTE-ONBOARDING.md)**  
+**→ What each doc is for: [docs/README.md](docs/README.md)**
+
+**Architecture / design narrative:** [EXPLORATION.md](EXPLORATION.md) (flows, schema, risks — kept aligned with `lib/`, workflows). **Pinecone:** [docs/PINECONE_NAMESPACE.md](docs/PINECONE_NAMESPACE.md). **Deploy:** [docs/PRODUCTION-DEPLOYMENT-PLAN.md](docs/PRODUCTION-DEPLOYMENT-PLAN.md). **RAG quality:** [docs/RAG-FAITHFULNESS-TRACKER.md](docs/RAG-FAITHFULNESS-TRACKER.md).
 
 ## Setup
 
@@ -50,7 +54,7 @@ RAG over institute PDFs; students ask on **Telegram**, get answers or clarify→
 - **Webhook (n8n):** Log request duration (webhook received → reply sent) where n8n supports it.
 - **Ingestion:** Logs extraction outcome (`total_chars`, `page_count`, `is_valid`) per upload to spot messy PDFs.
 
-See `EXPLORATION.md` and `PLAN.md` for full design and task list.
+See `EXPLORATION.md` and `PLAN.md` for full design and task list. **Post-pilot multi-institute** summary is in `PLAN.md` § Multi-institute; diagrams and checklists in `docs/MULTI-INSTITUTE-ONBOARDING.md`.
 
 ## RAG quality
 
